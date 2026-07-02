@@ -722,28 +722,31 @@ class PlannerApp(App):
         cols = max(80, term_cols - 39)
         rows = max(24, term_rows - 4)
 
+        is_resume = bool(task.get("claude_session_id"))
+
         def _launch(cwd: str | None) -> None:
             if cwd is None:
                 return
             cwd = str(Path(cwd).expanduser()) if cwd else None
-            from planner.session_manager import launch_session
+            from planner.session_manager import launch_session, resume_session
             from planner.backends import get_backend
-
-            full_name_holder: list[str] = []
 
             async def _do_launch_and_attach() -> None:
                 import asyncio
                 loop = asyncio.get_event_loop()
-                full_name = await loop.run_in_executor(
-                    None, lambda: launch_session(DB_PATH, task, cwd=cwd, cols=cols, rows=rows)
-                )
+                if is_resume:
+                    fn = lambda: resume_session(DB_PATH, task, cwd=cwd, cols=cols, rows=rows)
+                else:
+                    fn = lambda: launch_session(DB_PATH, task, cwd=cwd, cols=cols, rows=rows)
+                full_name = await loop.run_in_executor(None, fn)
                 if full_name:
                     self._snapshot()
                     self._monitor.stop()
                     self.exit(result=get_backend().attach_cmd(full_name))
 
             self.run_worker(_do_launch_and_attach)
-            self.notify(f"Starting session for {task['title']}…")
+            verb = "Resuming" if is_resume else "Starting"
+            self.notify(f"{verb} session for {task['title']}…")
 
         saved_cwd = task.get("cwd")
         if saved_cwd:

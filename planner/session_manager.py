@@ -45,7 +45,10 @@ def launch_session(db_path: Path, task: dict, cwd: str | None = None,
     # full_name differs by backend: screen uses PID.name, tmux uses name
     # Resolve by looking up the just-created session
     full_name = _resolve_full_name(backend, name) or name
-    update_task(db_path, task_id, screen_session=full_name, claude_session_id=session_id)
+    update_kwargs: dict = dict(screen_session=full_name, claude_session_id=session_id)
+    if cwd:
+        update_kwargs["cwd"] = cwd
+    update_task(db_path, task_id, **update_kwargs)
     is_prompt = task.get("is_prompt", 1)
     if is_prompt is None:
         is_prompt = 1
@@ -85,6 +88,24 @@ def resume_sessions(db_path: Path) -> int:
         update_task(db_path, t["id"], screen_session=full_name)
         resumed += 1
     return resumed
+
+
+def resume_session(db_path: Path, task: dict, cwd: str | None = None,
+                   cols: int = 220, rows: int = 50) -> str:
+    """Resume a dead session using stored claude_session_id. Returns full_name."""
+    backend = get_backend()
+    task_id = task["id"]
+    session_id = task["claude_session_id"]
+    effective_cwd = cwd or task.get("cwd") or None
+    name = session_name_for(task_id, task.get("title"))
+    shell_cmd = f"exec claude --resume {session_id}"
+    backend.launch(name, shell_cmd, cwd=effective_cwd, cols=cols, rows=rows)
+    full_name = _resolve_full_name(backend, name) or name
+    update_kwargs: dict = dict(screen_session=full_name)
+    if effective_cwd:
+        update_kwargs["cwd"] = effective_cwd
+    update_task(db_path, task_id, **update_kwargs)
+    return full_name
 
 
 def kill_session(screen_session: str) -> None:
