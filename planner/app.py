@@ -7,7 +7,7 @@ from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
 from textual.screen import ModalScreen
-from textual.widgets import Button, Footer, Input, Label, ListItem, ListView, LoadingIndicator, Static
+from textual.widgets import Button, Footer, Input, Label, ListItem, ListView, LoadingIndicator, Static, TextArea
 
 from planner.config import DB_PATH, PLANNER_ROOT, SCREEN_POLL_INTERVAL
 from planner.db import init_db, list_tasks, update_task
@@ -337,6 +337,7 @@ class PlannerApp(App):
         Binding("b", "run_bitbucket", "PRs"),
         Binding("s", "run_slack", "Slack digest"),
         Binding("R", "run_all", "Run all"),
+        Binding("u", "upgrade", "Upgrade", show=False),
         Binding("q", "quit", "Quit"),
         Binding("T", "change_theme", "Theme", show=False),
         Binding("h", "show_help", "Help", show=False),
@@ -502,9 +503,30 @@ class PlannerApp(App):
 
     def _check_for_update(self) -> None:
         from planner.updater import check_for_update
-        msg = check_for_update()
-        if msg:
-            self.call_from_thread(self.notify, msg, severity="warning", timeout=10)
+        outdated, _local, remote = check_for_update()
+        if outdated and remote:
+            self.call_from_thread(self.query_one(StatusBar).set_update_available, remote)
+
+    def action_upgrade(self) -> None:
+        if isinstance(self.focused, (Input, TextArea)):
+            return
+        sb = self.query_one(StatusBar)
+        if not sb.update_available:
+            return
+        from planner.updater import do_upgrade
+
+        async def _run() -> None:
+            import asyncio
+            loop = asyncio.get_event_loop()
+            self.notify("Upgrading…", timeout=60)
+            success, output = await loop.run_in_executor(None, do_upgrade)
+            if success:
+                self.notify("Upgraded! Restarting…", severity="information", timeout=3)
+                self.call_later(self.exit, result="__restart__")
+            else:
+                self.notify(f"Upgrade failed: {output[:120]}", severity="error", timeout=15)
+
+        self.run_worker(_run)
 
     def _check_recurring(self) -> None:
         now = datetime.datetime.now()
@@ -705,10 +727,13 @@ class PlannerApp(App):
         right = self.query_one(RightPane)
         if right._mode == "content":
             task = self.query_one(TaskPanel)._selected_task()
-            if task and task.get("screen_session"):
-                from planner.backends import get_backend
-                self._monitor.stop()
-                self.exit(result=get_backend().attach_cmd(task["screen_session"]))
+            if task:
+                if task.get("screen_session"):
+                    from planner.backends import get_backend
+                    self._monitor.stop()
+                    self.exit(result=get_backend().attach_cmd(task["screen_session"]))
+                elif task.get("source") not in TaskPanel.LOCKED_SOURCES:
+                    self._prompt_start_session(task)
         elif right._mode == "task":
             ep = right.query_one(TaskEditPane)
             if not ep.editing:

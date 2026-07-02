@@ -28,7 +28,9 @@ python -m planner.app "$@" "$RESULT_FILE"
 EXIT_CODE=$?
 
 RESULT=$(cat "$RESULT_FILE" 2>/dev/null)
-if [ -n "$RESULT" ]; then
+if [ "$RESULT" = "__restart__" ]; then
+    exec "$0" "$@"
+elif [ -n "$RESULT" ]; then
     # Attach to session; when it detaches/exits, relaunch the planner
     $RESULT || true
     exec "$0" "$@"

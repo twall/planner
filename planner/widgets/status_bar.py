@@ -17,15 +17,27 @@ class StatusBar(Widget):
         super().__init__()
         self._sync_label = "never"
         self._sync_time: datetime.datetime | None = None
+        self._update_sha: str | None = None
 
     def compose(self) -> ComposeResult:
         yield Static(id="status-content")
 
     def set_sync_status(self, label: str, seconds_ago: int) -> None:
-        # seconds_ago param kept for API compat but ignored — we store the timestamp
         self._sync_label = label
         self._sync_time = datetime.datetime.now()
         self._refresh_content()
+
+    def set_update_available(self, remote_sha: str) -> None:
+        self._update_sha = remote_sha
+        self._refresh_content()
+
+    def clear_update(self) -> None:
+        self._update_sha = None
+        self._refresh_content()
+
+    @property
+    def update_available(self) -> bool:
+        return bool(self._update_sha)
 
     def on_mount(self) -> None:
         self.set_interval(1, self._refresh_content)
@@ -41,4 +53,7 @@ class StatusBar(Widget):
         else:
             sync_str = "never"
         text = f"  PLANNER  [{date_str}]  [last sync: {sync_str}]  {time_str}"
+        if self._update_sha:
+            short = self._update_sha[:7]
+            text += f"  [bold yellow]  update available ({short}) — press u to upgrade[/bold yellow]"
         self.query_one("#status-content", Static).update(text)

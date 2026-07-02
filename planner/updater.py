@@ -32,13 +32,31 @@ def _remote_sha() -> str | None:
         return None
 
 
-def check_for_update() -> str | None:
-    """Return a message string if an update is available, else None."""
+def check_for_update() -> tuple[bool, str, str] | tuple[bool, None, None]:
+    """Return (is_outdated, local_sha, remote_sha). Returns (False, None, None) on error."""
     local = _local_sha()
     remote = _remote_sha()
     if not local or not remote:
-        return None
-    if local != remote:
-        short = remote[:7]
-        return f"Update available ({short}). Run: cd ~/planner && git pull"
-    return None
+        return False, None, None
+    return local != remote, local, remote
+
+
+def do_upgrade() -> tuple[bool, str]:
+    """Run git pull and reinstall. Returns (success, output)."""
+    try:
+        pull = subprocess.run(
+            ["git", "pull", "--ff-only"],
+            capture_output=True, text=True, timeout=30, cwd=_INSTALL_ROOT
+        )
+        if pull.returncode != 0:
+            return False, pull.stderr.strip() or pull.stdout.strip()
+        pip = subprocess.run(
+            [str(_INSTALL_ROOT / ".venv" / "bin" / "pip"), "install", "-q", "-e", str(_INSTALL_ROOT)],
+            capture_output=True, text=True, timeout=60, cwd=_INSTALL_ROOT
+        )
+        out = pull.stdout.strip()
+        if pip.returncode != 0:
+            return False, f"{out}\npip install failed: {pip.stderr.strip()}"
+        return True, out
+    except Exception as e:
+        return False, str(e)
