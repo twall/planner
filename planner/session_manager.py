@@ -8,7 +8,18 @@ from planner.db import add_task, list_tasks, update_task
 SESSION_NAME_PREFIX = "planner"
 
 
-def session_name_for(task_id: int) -> str:
+def _slugify(title: str) -> str:
+    """Convert task title to a safe session name component."""
+    import re
+    slug = title.lower().strip()
+    slug = re.sub(r"[^a-z0-9]+", "-", slug)
+    slug = slug.strip("-")
+    return slug[:40] or "task"
+
+
+def session_name_for(task_id: int, title: str | None = None) -> str:
+    if title:
+        return f"{SESSION_NAME_PREFIX}-{_slugify(title)}-{task_id}"
     return f"{SESSION_NAME_PREFIX}-{task_id}"
 
 
@@ -27,7 +38,7 @@ def launch_session(db_path: Path, task: dict, cwd: str | None = None,
     """Launch a multiplexer session + claude for task. Returns session full_name."""
     backend = get_backend()
     task_id = task["id"]
-    name = session_name_for(task_id)
+    name = session_name_for(task_id, task.get("title"))
     session_id = str(uuid.uuid4())
     shell_cmd = f"exec claude --session-id {session_id}"
     backend.launch(name, shell_cmd, cwd=cwd, cols=cols, rows=rows)
@@ -65,7 +76,7 @@ def resume_sessions(db_path: Path) -> int:
     for t in tasks:
         if not t.get("claude_session_id"):
             continue
-        name = session_name_for(t["id"])
+        name = session_name_for(t["id"], t.get("title"))
         if name in live_names:
             continue
         shell_cmd = f"exec claude --resume {t['claude_session_id']}"
@@ -118,4 +129,4 @@ def run_recurring_via_session(db_path: Path, task_dict: dict, prompt: str) -> No
             return
     launch_session(db_path, task_dict)
     time.sleep(2)
-    backend.send_input(session_name_for(task_dict["id"]), prompt)
+    backend.send_input(session_name_for(task_dict["id"], task_dict.get("title")), prompt)
