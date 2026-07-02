@@ -7,11 +7,37 @@ from planner.db import init_db, add_task, list_tasks
 INBOX_PATH = Path.home() / ".planner" / "inbox.json"
 
 
+HELP = """\
+Usage: planner.cli <command> [options]
+
+Commands:
+  add <title> [--today|--week|--backlog] [--priority 1-5]
+      Add a new task.
+
+  list
+      List all open tasks with id, source, title, horizon, and priority.
+
+  update <id> [options]
+      Update an existing task by id (from `list`).
+      --today | --week | --backlog   Change horizon
+      --priority N                   Change priority (1=urgent, 5=low)
+      --title "..."                  Rename the task
+      --desc "..."                   Set the description/prompt
+
+  inbox add <title|json> [--today|--week|--backlog] [--desc "..."]
+      Queue a task to ~/.planner/inbox.json (picked up on next planner launch).
+      Accepts a plain title with flags or a raw JSON object.
+
+Options:
+  -h, --help    Show this help message.
+"""
+
+
 def main(argv: list[str] | None = None) -> int:
     args = argv if argv is not None else sys.argv[1:]
-    if not args:
-        print("Usage: planner.cli add <title> [--today|--week|--backlog] [--priority N]", file=sys.stderr)
-        return 1
+    if not args or args[0] in ("-h", "--help"):
+        print(HELP)
+        return 0
 
     command = args[0]
     rest = args[1:]
