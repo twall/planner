@@ -18,6 +18,9 @@ Commands:
       List all open tasks with id, source, title, horizon, and priority.
       -v / --verbose also shows description, cwd, and session name.
 
+  get <id>
+      Print full structured JSON for a single task by id.
+
   update <id> [options]
       Update an existing task by id (from `list`).
       --today | --week | --backlog   Change horizon
@@ -88,6 +91,30 @@ def main(argv: list[str] | None = None) -> int:
                     print(f"       cwd: {t['cwd']}")
                 if t.get("screen_session"):
                     print(f"   session: {t['screen_session']}")
+        return 0
+
+    elif command == "get":
+        if not rest:
+            print("Usage: planner.cli get <id>", file=sys.stderr)
+            return 1
+        try:
+            task_id = int(rest[0])
+        except ValueError:
+            print(f"Error: id must be an integer, got {rest[0]!r}", file=sys.stderr)
+            return 1
+        tasks = list_tasks(DB_PATH)
+        t = next((t for t in tasks if t["id"] == task_id), None)
+        if t is None:
+            # Also check done tasks
+            from planner.db import _conn
+            with _conn(DB_PATH) as conn:
+                row = conn.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
+            t = dict(row) if row else None
+        if t is None:
+            print(f"No task with id {task_id}", file=sys.stderr)
+            return 1
+        import json as _json
+        print(_json.dumps(t, indent=2, default=str))
         return 0
 
     elif command == "inbox":

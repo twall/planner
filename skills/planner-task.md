@@ -11,7 +11,8 @@ Add, list, or update tasks in the planner dashboard. Alias: `/task`.
 
 ```
 /planner-task add "title" [--today|--week|--backlog] [--priority 1-5]
-/planner-task list
+/planner-task list [-v|--verbose]
+/planner-task get <id>
 /planner-task update <id> [--today|--week|--backlog] [--priority N] [--title "..."] [--desc "..."]
 ```
 
@@ -32,6 +33,11 @@ List:
 ```bash
 python -m planner.cli list           # compact: id, title, horizon, priority
 python -m planner.cli list --verbose # also shows description, cwd, session
+```
+
+Get full task details as JSON:
+```bash
+python -m planner.cli get <id>
 ```
 
 Update (use the id from `list`):
