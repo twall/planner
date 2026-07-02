@@ -35,7 +35,10 @@ def launch_session(db_path: Path, task: dict, cwd: str | None = None,
     # Resolve by looking up the just-created session
     full_name = _resolve_full_name(backend, name) or name
     update_task(db_path, task_id, screen_session=full_name, claude_session_id=session_id)
-    if task.get("description"):
+    is_prompt = task.get("is_prompt", 1)
+    if is_prompt is None:
+        is_prompt = 1
+    if task.get("description") and bool(int(is_prompt)):
         time.sleep(2)
         backend.send_input(full_name, task["description"])
     return full_name

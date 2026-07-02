@@ -47,6 +47,20 @@ class TaskEditPane(Widget):
         height: 1;
         margin-bottom: 1;
     }
+    #btn-disposable {
+        margin-bottom: 1;
+        height: 1;
+        border: none;
+        background: transparent;
+        min-width: 0;
+    }
+    #btn-is-prompt {
+        margin-bottom: 1;
+        height: 1;
+        border: none;
+        background: transparent;
+        min-width: 0;
+    }
     """
 
     def __init__(self, db_path=DB_PATH):
@@ -54,6 +68,7 @@ class TaskEditPane(Widget):
         self._db_path = db_path
         self._current_task: dict | None = None
         self._editing = False
+        self._has_live_session = False
 
     def compose(self) -> ComposeResult:
         yield Static("[dim]No task selected.[/dim]", id="edit-placeholder")
@@ -65,18 +80,20 @@ class TaskEditPane(Widget):
             yield TextArea("", id="edit-desc", soft_wrap=True)
             yield Label("Working Directory")
             yield Input(placeholder="~/path/to/project  (blank = choose on start)", id="edit-cwd")
-            yield Static("", id="edit-disposable-hint")
+            yield Button("[ ] Use as Claude Code prompt", id="btn-is-prompt")
+            yield Button("[ ] Disposable  (hide on done, kept for retrieval)", id="btn-disposable")
             with Horizontal(id="edit-actions"):
                 yield Button("Start Session", id="btn-start")
 
     def on_mount(self) -> None:
         self.query_one("#edit-form").display = False
-        for btn in self.query(Button):
-            btn.can_focus = False
+        for btn_id in ("#btn-start", "#btn-disposable", "#btn-is-prompt"):
+            self.query_one(btn_id, Button).can_focus = False
 
-    def show(self, task: dict | None) -> None:
+    def show(self, task: dict | None, has_live_session: bool = False) -> None:
         self._current_task = task
         self._editing = False
+        self._has_live_session = has_live_session
         placeholder = self.query_one("#edit-placeholder", Static)
         form = self.query_one("#edit-form")
         if task is None:
@@ -97,26 +114,49 @@ class TaskEditPane(Widget):
         ta = self.query_one("#edit-desc", TextArea)
         ta.load_text(desc)
         self.query_one("#edit-cwd", Input).value = self._current_task.get("cwd") or ""
-        has_session = bool(self._current_task.get("screen_session"))
-        btn = self.query_one("#btn-start")
-        btn.display = not has_session
-        self.query_one("#edit-cwd", Input).disabled = has_session
-        self._update_disposable_hint()
 
-    def _update_disposable_hint(self) -> None:
+        # Show "Start Session" when no live session is active
+        btn_start = self.query_one("#btn-start", Button)
+        btn_start.display = not self._has_live_session
+        self.query_one("#edit-cwd", Input).disabled = self._has_live_session
+
+        self._update_disposable_btn()
+        self._update_is_prompt_btn()
+
+    def _update_disposable_btn(self) -> None:
         if not self._current_task:
             return
         is_disp = bool(self._current_task.get("disposable"))
-        marker = "[bold green]✓[/bold green]" if is_disp else "[ ]"
-        hint = self.query_one("#edit-disposable-hint", Static)
-        hint.update(f"[dim]{marker} Disposable  (hide on done, kept for retrieval)[/dim]")
+        mark = "[bold green]✓[/bold green]" if is_disp else "[ ]"
+        self.query_one("#btn-disposable", Button).label = f"{mark} Disposable  (hide on done, kept for retrieval)"
+
+    def _update_is_prompt_btn(self) -> None:
+        if not self._current_task:
+            return
+        # Default True for existing rows that predate the column
+        is_prompt = self._current_task.get("is_prompt", 1)
+        if is_prompt is None:
+            is_prompt = 1
+        is_prompt = bool(int(is_prompt))
+        mark = "[bold green]✓[/bold green]" if is_prompt else "[ ]"
+        self.query_one("#btn-is-prompt", Button).label = f"{mark} Use as Claude Code prompt"
 
     def _toggle_disposable(self) -> None:
         if not self._current_task or not self._editing:
             return
         new_val = not bool(self._current_task.get("disposable"))
         self._current_task["disposable"] = int(new_val)
-        self._update_disposable_hint()
+        self._update_disposable_btn()
+
+    def _toggle_is_prompt(self) -> None:
+        if not self._current_task or not self._editing:
+            return
+        cur = self._current_task.get("is_prompt", 1)
+        if cur is None:
+            cur = 1
+        new_val = not bool(int(cur))
+        self._current_task["is_prompt"] = int(new_val)
+        self._update_is_prompt_btn()
 
     def _set_fields_readonly(self, readonly: bool) -> None:
         for inp in self.query(Input):
@@ -128,14 +168,13 @@ class TaskEditPane(Widget):
         if not self._current_task:
             hint.update("")
         elif self._editing:
-            hint.update("[dim][bold]● EDITING[/bold]  esc: exit field  ·  ctrl+s: save  ·  ctrl+d: toggle disposable  ·  tab: next[/dim]")
+            hint.update("[dim][bold]● EDITING[/bold]  ctrl+s: save  ·  esc: cancel  ·  ctrl+d: disposable  ·  tab: next[/dim]")
         else:
-            has_session = bool(self._current_task.get("screen_session"))
             if self._current_task.get("source") == "builtin":
-                session_hint = "" if has_session else "  ·  ctrl+s: start session"
+                session_hint = "" if self._has_live_session else "  ·  ctrl+s: start session"
                 hint.update(f"[dim][italic]built-in task[/italic]  ·  ←/→: switch pane{session_hint}[/dim]")
             else:
-                session_hint = "" if has_session else "  ·  ctrl+s: start session"
+                session_hint = "" if self._has_live_session else "  ·  ctrl+s: start session"
                 hint.update(f"[dim]enter: edit  ·  ←/→: switch pane{session_hint}[/dim]")
 
     def enter_edit(self) -> None:
@@ -145,17 +184,19 @@ class TaskEditPane(Widget):
             return
         self._editing = True
         self._set_fields_readonly(False)
-        btn = self.query_one("#btn-start", Button)
-        if btn.display:
-            btn.can_focus = True
+        for btn_id in ("#btn-start", "#btn-disposable", "#btn-is-prompt"):
+            self.query_one(btn_id, Button).can_focus = True
         self._update_hint()
         self.query_one("#edit-title", Input).focus()
 
     def _exit_edit(self) -> None:
         self._editing = False
         self._set_fields_readonly(True)
-        self.query_one("#btn-start", Button).can_focus = False
+        for btn_id in ("#btn-start", "#btn-disposable", "#btn-is-prompt"):
+            self.query_one(btn_id, Button).can_focus = False
         self._update_hint()
+        # Return focus to the pane itself so keys work immediately
+        self.focus()
 
     def _save(self) -> None:
         if not self._current_task:
@@ -165,11 +206,16 @@ class TaskEditPane(Widget):
         desc = self.query_one("#edit-desc", TextArea).text.strip()
         cwd = self.query_one("#edit-cwd", Input).value.strip()
         disposable = int(bool(self._current_task.get("disposable")))
+        is_prompt_val = self._current_task.get("is_prompt", 1)
+        if is_prompt_val is None:
+            is_prompt_val = 1
+        is_prompt = int(bool(int(is_prompt_val)))
         if title:
             update_task(self._db_path, tid, title=title,
                         description=desc if desc else None,
                         cwd=cwd if cwd else None,
-                        disposable=disposable)
+                        disposable=disposable,
+                        is_prompt=is_prompt)
         self._exit_edit()
         self.post_message(self.TaskSaved(tid))
 
@@ -182,7 +228,6 @@ class TaskEditPane(Widget):
         if not self._editing:
             return
         event.stop()
-        # Tab to next field from title/cwd; ctrl+s or explicit save handles final save
         if event.input.id == "edit-title":
             self.query_one("#edit-desc", TextArea).focus()
         elif event.input.id == "edit-cwd":
@@ -203,7 +248,6 @@ class TaskEditPane(Widget):
         elif event.key == "escape":
             event.stop()
             if in_textarea:
-                # Leave textarea, move to next field
                 self.screen.focus_next()
             else:
                 self._cancel()
@@ -222,10 +266,15 @@ class TaskEditPane(Widget):
             return
         tid = self._current_task["id"]
         if event.button.id == "btn-start":
-            # Save any in-progress edits before launching so description is current
             if self._editing:
                 self._save()
             self.post_message(self.SessionAction(tid, "start"))
+        elif event.button.id == "btn-disposable":
+            event.stop()
+            self._toggle_disposable()
+        elif event.button.id == "btn-is-prompt":
+            event.stop()
+            self._toggle_is_prompt()
 
     @property
     def editing(self) -> bool:

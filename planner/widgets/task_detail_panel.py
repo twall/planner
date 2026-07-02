@@ -75,4 +75,4 @@ class RightPane(Widget):
 
     def _push_to_panes(self) -> None:
         self.query_one(ContentPane).show(self._current_task, self._current_session)
-        self.query_one(TaskEditPane).show(self._current_task)
+        self.query_one(TaskEditPane).show(self._current_task, has_live_session=bool(self._current_session))

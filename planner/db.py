@@ -36,7 +36,8 @@ def init_db(db_path: Path) -> None:
     with _conn(db_path) as conn:
         conn.executescript(SCHEMA)
         for col, typedef in [("claude_session_id", "TEXT"), ("session_pid", "TEXT"),
-                         ("cwd", "TEXT"), ("disposable", "INTEGER DEFAULT 0")]:
+                         ("cwd", "TEXT"), ("disposable", "INTEGER DEFAULT 0"),
+                         ("is_prompt", "INTEGER DEFAULT 1")]:
             try:
                 conn.execute(f"ALTER TABLE tasks ADD COLUMN {col} {typedef}")
                 conn.commit()
@@ -46,12 +47,13 @@ def init_db(db_path: Path) -> None:
 
 def add_task(db_path: Path, source: str, title: str, horizon: str = "today",
              priority: int = 3, description: str = None, jira_key: str = None,
-             screen_session: str = None, cwd: str = None, disposable: bool = False) -> int:
+             screen_session: str = None, cwd: str = None, disposable: bool = False,
+             is_prompt: bool = True) -> int:
     with _conn(db_path) as conn:
         cur = conn.execute(
-            "INSERT INTO tasks (source, title, horizon, priority, description, jira_key, screen_session, cwd, disposable) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (source, title, horizon, priority, description, jira_key, screen_session, cwd, int(disposable))
+            "INSERT INTO tasks (source, title, horizon, priority, description, jira_key, screen_session, cwd, disposable, is_prompt) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (source, title, horizon, priority, description, jira_key, screen_session, cwd, int(disposable), int(is_prompt))
         )
         return cur.lastrowid
 
@@ -76,7 +78,7 @@ def list_tasks(db_path: Path, horizon: str = None, status: str = None) -> list[d
 
 def update_task(db_path: Path, task_id: int, **fields) -> None:
     allowed = {"title", "description", "priority", "horizon", "status",
-               "screen_session", "claude_session_id", "session_pid", "cwd", "disposable"}
+               "screen_session", "claude_session_id", "session_pid", "cwd", "disposable", "is_prompt"}
     updates = {k: v for k, v in fields.items() if k in allowed}
     if not updates:
         return
