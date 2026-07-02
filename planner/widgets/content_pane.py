@@ -1,3 +1,5 @@
+from rich.text import Text
+
 from textual.app import ComposeResult
 from textual.containers import Vertical
 from textual.widget import Widget
@@ -46,14 +48,30 @@ class ContentPane(Widget):
 
         if session:
             color = STATE_COLORS.get(session.state, "white")
-            header = f"[{color}]● {session.full_name}  {session.state}[/{color}]\n{'─' * 40}\n"
-            # Escape Rich markup in raw session output to prevent bleed-through
-            from rich.markup import escape
+            width = max(self.content_size.width - 2, 20)
             lines = session.last_lines[-30:] if session.last_lines else []
-            tail = "\n".join(escape(l) for l in lines) if lines else "[dim](no output)[/dim]"
-            out.update(header + tail)
+            # Build as Rich Text to avoid markup parser touching raw session output
+            t = Text()
+            t.append(f"● {session.full_name}  {session.state}", style=color)
+            t.append(f"\n{'─' * 40}\n")
+            if lines:
+                for i, line in enumerate(lines):
+                    if i:
+                        t.append("\n")
+                    t.append(line[:width])  # plain append — no markup parsing
+            else:
+                t.append("(no output)", style="dim")
+            out.update(t)
             hint.update("[dim]enter: attach to session[/dim]")
         else:
-            desc = task.get("description") or "[dim]No description.[/dim]"
-            out.update(f"[bold]{task['title']}[/bold]\n\n{desc}")
+            t = Text()
+            t.append(task["title"], style="bold")
+            desc = task.get("description")
+            if desc:
+                t.append("\n\n")
+                t.append(desc)
+            else:
+                t.append("\n\n")
+                t.append("No description.", style="dim")
+            out.update(t)
             hint.update("[dim]→: task pane  ·  ctrl+s: start session[/dim]")
