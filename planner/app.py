@@ -440,6 +440,12 @@ class PlannerApp(App):
                 self.bind(key, action, description=desc, show=show)
 
     async def _startup(self) -> None:
+        try:
+            await self._startup_inner()
+        except Exception as e:
+            self.notify(f"Startup error: {e}", severity="error", timeout=10)
+
+    async def _startup_inner(self) -> None:
         from planner.db import add_task, list_tasks
         from planner.session_manager import import_orphan_sessions, resume_sessions
         _install_skills()
