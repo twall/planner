@@ -29,6 +29,7 @@ class RecurringTask:
     days: list = field(default_factory=list)  # ["mon","tue",...] — limit to these weekdays
     day: Optional[str] = None         # for frequency="weekly": which weekday
     interval_hours: Optional[float] = None    # for frequency="interval"
+    cwd: Optional[str] = None         # working directory for claude invocation
 
 
 def load_tasks(config_path: Path = TASKS_CONFIG_PATH) -> list[RecurringTask]:
@@ -38,6 +39,7 @@ def load_tasks(config_path: Path = TASKS_CONFIG_PATH) -> list[RecurringTask]:
         data = json.load(f)
     tasks = []
     for item in data.get("recurring_tasks", []):
+        raw_cwd = item.get("cwd")
         tasks.append(RecurringTask(
             name=item["name"],
             label=item["label"],
@@ -47,6 +49,7 @@ def load_tasks(config_path: Path = TASKS_CONFIG_PATH) -> list[RecurringTask]:
             days=item.get("days", []),
             day=item.get("day"),
             interval_hours=item.get("interval_hours"),
+            cwd=str(Path(raw_cwd).expanduser()) if raw_cwd else None,
         ))
     return tasks
 
@@ -141,17 +144,18 @@ class Scheduler:
             return get_last_run(self._db_path, task_name) != today
         return self.should_run(task)
 
-    def _invoke_claude(self, prompt: str) -> str | None:
+    def _invoke_claude(self, prompt: str, cwd: str | None = None) -> str | None:
         result = subprocess.run(
             ["claude", "--print", prompt],
-            capture_output=True, text=True, timeout=120
+            capture_output=True, text=True, timeout=120,
+            cwd=cwd or None,
         )
         if result.returncode != 0:
             return None
         return result.stdout
 
     def run_task(self, task: RecurringTask) -> list[dict]:
-        output = self._invoke_claude(task.prompt)
+        output = self._invoke_claude(task.prompt, cwd=task.cwd)
         if output is None:
             return []
         parsed = parse_claude_output(output)
