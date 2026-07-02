@@ -7,7 +7,7 @@ from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
 from textual.screen import ModalScreen
-from textual.widgets import Footer, Input, Label, ListItem, ListView, LoadingIndicator, Static
+from textual.widgets import Button, Footer, Input, Label, ListItem, ListView, LoadingIndicator, Static
 
 from planner.config import DB_PATH, PLANNER_ROOT, SCREEN_POLL_INTERVAL
 from planner.db import init_db, list_tasks, update_task
@@ -248,6 +248,52 @@ class ProjectPickerModal(ModalScreen[str | None]):
     def on_input_submitted(self, event: Input.Submitted) -> None:
         path = event.value.strip()
         self.dismiss(path if path else None)
+
+
+class ConfirmDeleteModal(ModalScreen[bool]):
+    """Confirm killing a live session before deleting a task."""
+
+    CSS = """
+    ConfirmDeleteModal {
+        align: center middle;
+    }
+    #confirm-box {
+        width: 60;
+        height: auto;
+        border: solid $error;
+        padding: 1 2;
+        background: $surface;
+    }
+    #confirm-buttons {
+        margin-top: 1;
+        height: 3;
+    }
+    #confirm-buttons Button {
+        margin-right: 1;
+    }
+    """
+
+    BINDINGS = [("escape", "dismiss_false", "Cancel"), ("y", "dismiss_true", "Yes")]
+
+    def __init__(self, task_title: str):
+        super().__init__()
+        self._title = task_title
+
+    def compose(self) -> ComposeResult:
+        with Static(id="confirm-box"):
+            yield Label(f"[bold red]Kill session and delete task?[/bold red]\n\n{self._title}")
+            with Horizontal(id="confirm-buttons"):
+                yield Button("Yes, delete (y)", id="btn-yes", variant="error")
+                yield Button("Cancel (esc)", id="btn-cancel")
+
+    def action_dismiss_false(self) -> None:
+        self.dismiss(False)
+
+    def action_dismiss_true(self) -> None:
+        self.dismiss(True)
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        self.dismiss(event.button.id == "btn-yes")
 
 
 class PlannerApp(App):
@@ -511,6 +557,13 @@ class PlannerApp(App):
         session = self._get_session_for_task(task)
         self.query_one(RightPane).set_task(task, session)
 
+    def on_task_panel_delete_requested(self, event: TaskPanel.DeleteRequested) -> None:
+        task = event.task
+        def _confirmed(yes: bool) -> None:
+            if yes:
+                self.query_one(TaskPanel).do_delete(task)
+        self.push_screen(ConfirmDeleteModal(task["title"]), _confirmed)
+
     def on_task_edit_pane_task_saved(self, event: TaskEditPane.TaskSaved) -> None:
         self.query_one(TaskPanel).refresh_tasks()
         self.notify("Saved")
@@ -622,13 +675,23 @@ class PlannerApp(App):
         def _launch(cwd: str | None) -> None:
             if cwd is None:
                 return
-            # Expand ~ in cwd
             cwd = str(Path(cwd).expanduser()) if cwd else None
             from planner.session_manager import launch_session
-            self.run_worker(
-                lambda: launch_session(DB_PATH, task, cwd=cwd, cols=cols, rows=rows),
-                thread=True
-            )
+            from planner.backends import get_backend
+
+            full_name_holder: list[str] = []
+
+            async def _do_launch_and_attach() -> None:
+                import asyncio
+                loop = asyncio.get_event_loop()
+                full_name = await loop.run_in_executor(
+                    None, lambda: launch_session(DB_PATH, task, cwd=cwd, cols=cols, rows=rows)
+                )
+                if full_name:
+                    self._monitor.stop()
+                    self.exit(result=get_backend().attach_cmd(full_name))
+
+            self.run_worker(_do_launch_and_attach)
             self.notify(f"Starting session for {task['title']}…")
 
         saved_cwd = task.get("cwd")

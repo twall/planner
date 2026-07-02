@@ -32,6 +32,11 @@ class TaskPanel(Widget):
             super().__init__()
             self.task = task
 
+    class DeleteRequested(Message):
+        def __init__(self, task: dict):
+            super().__init__()
+            self.task = task
+
     DEFAULT_CSS = """
     TaskPanel {
         height: 1fr;
@@ -127,16 +132,18 @@ class TaskPanel(Widget):
         self._emit_selected()
 
     def action_move_cursor_down(self) -> None:
+        if not self._tasks:
+            return
         idx = self._cursor_idx()
-        if idx < len(self._tasks) - 1:
-            self._selected_id = self._tasks[idx + 1]["id"]
-            self._render_tasks()
+        self._selected_id = self._tasks[(idx + 1) % len(self._tasks)]["id"]
+        self._render_tasks()
 
     def action_move_cursor_up(self) -> None:
+        if not self._tasks:
+            return
         idx = self._cursor_idx()
-        if idx > 0:
-            self._selected_id = self._tasks[idx - 1]["id"]
-            self._render_tasks()
+        self._selected_id = self._tasks[(idx - 1) % len(self._tasks)]["id"]
+        self._render_tasks()
 
     def _selected_task(self) -> dict | None:
         idx = self._cursor_idx()
@@ -145,16 +152,25 @@ class TaskPanel(Widget):
     LOCKED_SOURCES = {"slack", "bitbucket", "sentry", "jira", "builtin"}
 
     def action_mark_done(self) -> None:
-        from planner.session_manager import kill_session
         t = self._selected_task()
         if not t:
             return
         if t.get("source") in self.LOCKED_SOURCES:
             self.notify(f"Built-in task '{t['title']}' cannot be deleted.", severity="warning")
             return
+        # If a live session exists, ask the app to confirm before killing
         if t.get("screen_session"):
-            kill_session(t["screen_session"])
+            self.post_message(self.DeleteRequested(t))
+            return
         update_task(self._db_path, t["id"], status="done", screen_session=None,
+                    claude_session_id=None)
+        self.refresh_tasks()
+
+    def do_delete(self, task: dict) -> None:
+        from planner.session_manager import kill_session
+        if task.get("screen_session"):
+            kill_session(task["screen_session"])
+        update_task(self._db_path, task["id"], status="done", screen_session=None,
                     claude_session_id=None)
         self.refresh_tasks()
 

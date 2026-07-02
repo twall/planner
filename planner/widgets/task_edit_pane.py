@@ -9,6 +9,8 @@ from planner.db import update_task
 
 
 class TaskEditPane(Widget):
+    can_focus = True  # allows self.focus() to return focus here after edit
+
     class TaskSaved(Message):
         def __init__(self, task_id: int):
             super().__init__()
@@ -248,7 +250,8 @@ class TaskEditPane(Widget):
         elif event.key == "escape":
             event.stop()
             if in_textarea:
-                self.screen.focus_next()
+                # Leave textarea back to cwd input (previous field)
+                self.query_one("#edit-cwd", Input).focus()
             else:
                 self._cancel()
         elif event.key in ("down", "up") and not in_textarea:

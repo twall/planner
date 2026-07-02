@@ -104,10 +104,10 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     elif command == "update":
-        # update <id> [--today|--week|--backlog] [--priority N] [--title "..."]
+        # update <id> [--today|--week|--backlog] [--priority N] [--title "..."] [--desc "..."]
         from planner.db import update_task
         if not rest:
-            print("Usage: planner.cli update <id> [--today|--week|--backlog] [--priority N] [--title ...]",
+            print("Usage: planner.cli update <id> [--today|--week|--backlog] [--priority N] [--title ...] [--desc ...]",
                   file=sys.stderr)
             return 1
         try:
@@ -133,12 +133,15 @@ def main(argv: list[str] | None = None) -> int:
             elif rest[i] == "--title" and i + 1 < len(rest):
                 fields["title"] = rest[i + 1]
                 i += 1
+            elif rest[i] in ("--desc", "--description") and i + 1 < len(rest):
+                fields["description"] = rest[i + 1]
+                i += 1
             i += 1
         if not fields:
             print("Error: no fields to update", file=sys.stderr)
             return 1
         update_task(DB_PATH, task_id, **fields)
-        changes = ", ".join(f"{k}={v}" for k, v in fields.items())
+        changes = ", ".join(f"{k}={v!r}" for k, v in fields.items())
         print(f"Updated task #{task_id}: {changes}")
         return 0
 
