@@ -1,3 +1,4 @@
+import time
 from pathlib import Path
 from textual.app import ComposeResult
 from textual.message import Message
@@ -6,6 +7,8 @@ from textual.widget import Widget
 from planner.db import list_tasks, update_task
 from planner.config import DB_PATH
 from planner.screen_monitor import SessionState
+
+SPINNER_FRAMES = "⣾⣽⣻⢿⡿⣟⣯⣷"
 
 HORIZON_CYCLE = ["today", "this_week"]
 
@@ -53,6 +56,14 @@ class TaskPanel(Widget):
         self._session_states: dict[str, SessionState] = {}
         self._show_done: bool = False
 
+    def on_mount(self) -> None:
+        # Redraw at ~4fps to animate spinners for ACTIVE sessions
+        self.set_interval(0.25, self._maybe_spin)
+
+    def _maybe_spin(self) -> None:
+        if any(s.state == "ACTIVE" for s in self._session_states.values()):
+            self._render_tasks()
+
     def update_sessions(self, sessions: list[SessionState]) -> None:
         self._session_states = {}
         for s in sessions:
@@ -94,6 +105,12 @@ class TaskPanel(Widget):
             self._selected_id = self._tasks[clamped]["id"]
         # else: _selected_id still valid, keep it
         self._render_tasks()
+
+    def select_by_id(self, task_id: int) -> None:
+        ids = {t["id"] for t in self._tasks}
+        if task_id in ids:
+            self._selected_id = task_id
+            self._render_tasks()
 
     def _emit_selected(self) -> None:
         self.post_message(self.TaskSelected(self._selected_task()))
@@ -144,7 +161,11 @@ class TaskPanel(Widget):
         sess = self._session_states.get(t.get("screen_session", ""))
         if sess:
             color = STATE_COLORS.get(sess.state, "white")
-            badge = f"[{color}]●[/{color}] "
+            if sess.state == "ACTIVE":
+                frame = SPINNER_FRAMES[int(time.time() * 4) % len(SPINNER_FRAMES)]
+                badge = f"[green]{frame}[/green] "
+            else:
+                badge = f"[{color}]●[/{color}] "
         else:
             badge = "  "
         title = t["title"]

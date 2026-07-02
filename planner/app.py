@@ -10,6 +10,7 @@ from textual.screen import ModalScreen
 from textual.widgets import Button, Footer, Input, Label, ListItem, ListView, LoadingIndicator, Static, TextArea
 
 from planner.config import DB_PATH, PLANNER_ROOT, SCREEN_POLL_INTERVAL
+from planner.state import save_state, load_state
 from planner.db import init_db, list_tasks, update_task
 from planner.jira import JiraClient
 from planner.scheduler import Scheduler, load_jira_sync_interval
@@ -457,7 +458,11 @@ class PlannerApp(App):
                 update_task(DB_PATH, match["id"], status="open")
         import_orphan_sessions(DB_PATH)
         resume_sessions(DB_PATH)
-        self.query_one(TaskPanel).refresh_tasks()
+        panel = self.query_one(TaskPanel)
+        panel.refresh_tasks()
+        ui = load_state()
+        if ui.get("selected_task_id"):
+            panel.select_by_id(ui["selected_task_id"])
         self.query_one("#loading").add_class("visible")
         self.run_worker(self._scheduler.run_all_due, thread=True, name="startup")
 
@@ -522,6 +527,7 @@ class PlannerApp(App):
             success, output = await loop.run_in_executor(None, do_upgrade)
             if success:
                 self.notify("Upgraded! Restarting…", severity="information", timeout=3)
+                self._snapshot()
                 self.call_later(self.exit, result="__restart__")
             else:
                 self.notify(f"Upgrade failed: {output[:120]}", severity="error", timeout=15)
@@ -710,6 +716,7 @@ class PlannerApp(App):
                     None, lambda: launch_session(DB_PATH, task, cwd=cwd, cols=cols, rows=rows)
                 )
                 if full_name:
+                    self._snapshot()
                     self._monitor.stop()
                     self.exit(result=get_backend().attach_cmd(full_name))
 
@@ -723,6 +730,10 @@ class PlannerApp(App):
             projects = _decode_project_dirs()
             self.push_screen(ProjectPickerModal(projects), _launch)
 
+    def _snapshot(self) -> None:
+        task = self.query_one(TaskPanel)._selected_task()
+        save_state(task["id"] if task else None)
+
     def _handle_enter(self) -> None:
         right = self.query_one(RightPane)
         if right._mode == "content":
@@ -730,6 +741,7 @@ class PlannerApp(App):
             if task:
                 if task.get("screen_session"):
                     from planner.backends import get_backend
+                    self._snapshot()
                     self._monitor.stop()
                     self.exit(result=get_backend().attach_cmd(task["screen_session"]))
                 elif task.get("source") not in TaskPanel.LOCKED_SOURCES:
