@@ -1,0 +1,8 @@
+.superpowers/
+data/tasks.db
+*.db
+.venv/
+__pycache__/
+*.pyc
+*.egg-info/
+/tmp/planner-*.txt

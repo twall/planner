@@ -1,0 +1,23 @@
+{
+  "theme": "auto",
+  "screen_poll_interval": 5,
+  "screen_idle_threshold": 30,
+  "session_panel_width": 30,
+  "default_task_horizon": "backlog",
+  "keymap": {
+    "attach": "enter",
+    "preview": "p",
+    "new_task": "n",
+    "mark_done": "d",
+    "move_horizon": "m",
+    "sync_jira": "j",
+    "run_bitbucket": "b",
+    "run_slack": "s",
+    "run_all": "R",
+    "toggle_theme": "T",
+    "show_help": "h",
+    "quit": "q",
+    "cursor_down": "J",
+    "cursor_up": "K"
+  }
+}

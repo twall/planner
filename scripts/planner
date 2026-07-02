@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+set -e
+# Resolve install dir from script location, allow override via env
+PLANNER_DIR="${PLANNER_INSTALL_DIR:-$(cd "$(dirname "$0")/.." && pwd)}"
+export PLANNER_INSTALL_DIR="$PLANNER_DIR"
+VENV="$PLANNER_DIR/.venv"
+
+if [ ! -d "$VENV" ]; then
+    echo "Setting up planner venv..."
+    cd "$PLANNER_DIR"
+    uv venv --python 3.11 "$VENV"
+    uv pip install -r "$PLANNER_DIR/requirements.txt"
+    uv pip install -e "$PLANNER_DIR"
+fi
+
+export JIRA_API_TOKEN="${JIRA_API_TOKEN:-}"
+export JIRA_CLOUD_ID="${JIRA_CLOUD_ID:-}"
+export SENTRY_ACCESS_TOKEN="${SENTRY_ACCESS_TOKEN:-}"
+export PLANNER_SESSION_BACKEND="${PLANNER_SESSION_BACKEND:-screen}"
+
+source "$VENV/bin/activate"
+cd "$PLANNER_DIR"
+
+RESULT_FILE=$(mktemp)
+trap "rm -f $RESULT_FILE" EXIT
+
+python -m planner.app "$@" "$RESULT_FILE"
+EXIT_CODE=$?
+
+RESULT=$(cat "$RESULT_FILE" 2>/dev/null)
+if [ -n "$RESULT" ]; then
+    # Attach to session; when it detaches/exits, relaunch the planner
+    $RESULT || true
+    exec "$0" "$@"
+fi
+
+exit $EXIT_CODE
