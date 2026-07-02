@@ -684,7 +684,21 @@ class PlannerApp(App):
         self.query_one(TaskPanel).action_move_cursor_up()
 
     def on_key(self, event) -> None:
-        pass
+        if isinstance(self.focused, (Input,)):
+            return
+        from textual.widgets import TextArea
+        if isinstance(self.focused, TextArea):
+            return
+        # Digit keys 1-9: send choice + \r to session if awaiting permission
+        if len(event.key) == 1 and event.key.isdigit() and event.key != "0":
+            task = self.query_one(TaskPanel)._selected_task()
+            if not task or not task.get("screen_session"):
+                return
+            sess = self._get_session_for_task(task)
+            if sess and sess.state == "NEEDS PERMISSION":
+                from planner.session_manager import send_input
+                send_input(task["screen_session"], event.key + "\r")
+                event.stop()
 
     def key_enter(self, event) -> None:
         from textual.widgets import TextArea

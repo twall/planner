@@ -66,7 +66,7 @@ class ContentPane(Widget):
                 t.append("(no output)", style="dim")
             out.update(t)
             if session.state == "NEEDS PERMISSION":
-                hint.update("[dim]enter: attach  ·  shift+enter: accept selected option[/dim]")
+                hint.update("[dim]enter: attach  ·  shift+enter: accept  ·  1-9: pick option[/dim]")
             else:
                 hint.update("[dim]enter: attach to session[/dim]")
         else:
