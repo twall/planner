@@ -103,33 +103,54 @@ class TaskPanel(Widget):
         cursor_idx = self._cursor_idx()
         lines = []
         cursor_line = 0
+
+        builtins = [t for t in self._tasks if t["source"] == "builtin"]
+        normal   = [t for t in self._tasks if t["source"] != "builtin"]
+
         current_horizon = None
         for i, t in enumerate(self._tasks):
+            if t["source"] == "builtin":
+                continue
+            # Recompute flat index into self._tasks for cursor matching
+            flat_i = self._tasks.index(t)
             if t["horizon"] != current_horizon:
                 current_horizon = t["horizon"]
                 heading = {"today": "TODAY", "this_week": "THIS WEEK"}.get(
                     current_horizon, current_horizon.upper()
                 )
                 lines.append(f"\n[bold]{heading}[/bold]")
-            tag = SOURCE_TAG.get(t["source"], t["source"].upper())
-            cursor = "▶ " if i == cursor_idx else "  "
-            jira = f"[{t['jira_key']}] " if t.get("jira_key") else f"[{tag}] "
-            sess = self._session_states.get(t.get("screen_session", ""))
-            if sess:
-                color = STATE_COLORS.get(sess.state, "white")
-                badge = f"[{color}]●[/{color}] "
-            else:
-                badge = "  "
-            title = t["title"]
-            if t.get("status") == "done":
-                title = f"[dim s]{title}[/s][/dim]"
-            lines.append(f"{cursor}{badge}{jira}{title}")
-            if i == cursor_idx:
+            lines.append(self._render_row(t, flat_i == cursor_idx))
+            if flat_i == cursor_idx:
                 cursor_line = len(lines) - 1
+
+        if builtins:
+            lines.append("\n[bold]PERMANENT[/bold]")
+            for t in builtins:
+                flat_i = self._tasks.index(t)
+                lines.append(self._render_row(t, flat_i == cursor_idx))
+                if flat_i == cursor_idx:
+                    cursor_line = len(lines) - 1
+
         content = "\n".join(lines) if lines else "[dim]No tasks.[/dim]"
         self.query_one("#task-list-content", Static).update(content)
         self.scroll_to(y=cursor_line, animate=False)
         self._emit_selected()
+
+    def _render_row(self, t: dict, is_cursor: bool) -> str:
+        from planner.widgets.session_panel import STATE_COLORS
+        tag = SOURCE_TAG.get(t["source"], t["source"].upper())
+        cursor = "▶ " if is_cursor else "  "
+        jira = f"[{t['jira_key']}] " if t.get("jira_key") else f"[{tag}] "
+        sess = self._session_states.get(t.get("screen_session", ""))
+        if sess:
+            color = STATE_COLORS.get(sess.state, "white")
+            badge = f"[{color}]●[/{color}] "
+        else:
+            badge = "  "
+        title = t["title"]
+        if t.get("status") == "done":
+            title = f"[dim s]{title}[/s][/dim]"
+        return f"{cursor}{badge}{jira}{title}"
 
     def action_move_cursor_down(self) -> None:
         if not self._tasks:
