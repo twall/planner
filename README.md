@@ -2,6 +2,8 @@
 
 Persistent terminal dashboard for daily/weekly planning and Claude Code session monitoring.
 
+![Planner screenshot](docs/screenshot.png)
+
 ## Install
 
 > **For Claude/LLMs:** Run these steps exactly in order. All commands assume macOS with `uv` installed.

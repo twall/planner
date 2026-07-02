@@ -9,6 +9,8 @@ from typing import Optional
 from planner.config import DB_PATH, TASKS_CONFIG_PATH
 from planner.db import add_task, get_last_run, set_last_run
 
+RECURRING_SOURCES = {"slack", "git", "sentry"}
+
 
 TASK_LINE_RE = re.compile(
     r'^-\s+(.+?)\s+\((\w+),\s*priority\s*(\d)\)',
@@ -33,6 +35,7 @@ class RecurringTask:
 
 
 def load_tasks(config_path: Path = TASKS_CONFIG_PATH) -> list[RecurringTask]:
+    """Load recurring task definitions from tasks.json (import/seed only)."""
     if not config_path.exists():
         return []
     with open(config_path) as f:
@@ -52,6 +55,57 @@ def load_tasks(config_path: Path = TASKS_CONFIG_PATH) -> list[RecurringTask]:
             cwd=str(Path(raw_cwd).expanduser()) if raw_cwd else None,
         ))
     return tasks
+
+
+def import_tasks_to_db(db_path: Path, config_path: Path = TASKS_CONFIG_PATH) -> None:
+    """Hydrate recurring task DB rows from tasks.json. Idempotent — only updates schedule fields."""
+    from planner.db import list_tasks, update_task
+    if not config_path.exists():
+        return
+    json_tasks = load_tasks(config_path)
+    db_tasks = {t["source"]: t for t in list_tasks(db_path) if t["source"] in RECURRING_SOURCES}
+    for rt in json_tasks:
+        if rt.name not in db_tasks:
+            continue
+        task = db_tasks[rt.name]
+        # Only import if DB fields are still blank (don't overwrite user edits)
+        needs_import = not task.get("rt_frequency")
+        if needs_import:
+            update_task(db_path, task["id"],
+                        rt_frequency=rt.frequency,
+                        rt_time=rt.time,
+                        rt_days=",".join(rt.days) if rt.days else None,
+                        rt_day=rt.day,
+                        rt_interval_hours=rt.interval_hours)
+
+
+def export_tasks_from_db(db_path: Path, config_path: Path = TASKS_CONFIG_PATH) -> None:
+    """Write recurring task schedule fields from DB back to tasks.json."""
+    from planner.db import list_tasks
+    if not config_path.exists():
+        return
+    with open(config_path) as f:
+        data = json.load(f)
+    db_tasks = {t["source"]: t for t in list_tasks(db_path) if t["source"] in RECURRING_SOURCES}
+    for rt in data.get("recurring_tasks", []):
+        task = db_tasks.get(rt["name"])
+        if not task:
+            continue
+        if task.get("rt_frequency"):
+            rt["frequency"] = task["rt_frequency"]
+        if task.get("rt_time") is not None:
+            rt["time"] = task["rt_time"]
+        days_str = task.get("rt_days")
+        rt["days"] = days_str.split(",") if days_str else []
+        if task.get("rt_day") is not None:
+            rt["day"] = task["rt_day"]
+        if task.get("rt_interval_hours") is not None:
+            rt["interval_hours"] = task["rt_interval_hours"]
+        if task.get("cwd"):
+            rt["cwd"] = task["cwd"]
+    with open(config_path, "w") as f:
+        json.dump(data, f, indent=2)
+        f.write("\n")
 
 
 def load_jira_sync_interval(config_path: Path = TASKS_CONFIG_PATH) -> int:
@@ -95,7 +149,31 @@ class Scheduler:
         self._config_path = config_path
 
     def load_tasks(self) -> list[RecurringTask]:
-        return load_tasks(self._config_path)
+        """Load recurring tasks from DB (authoritative), falling back to tasks.json for prompt/label."""
+        from planner.db import list_tasks
+        # Build prompt/label map from tasks.json (these aren't stored in the DB task row)
+        json_map = {rt.name: rt for rt in load_tasks(self._config_path)}
+        db_tasks = [t for t in list_tasks(self._db_path)
+                    if t["source"] in RECURRING_SOURCES and t["status"] != "done"]
+        result = []
+        for t in db_tasks:
+            base = json_map.get(t["source"])
+            if base is None:
+                continue
+            days_str = t.get("rt_days") or ""
+            raw_cwd = t.get("cwd") or base.cwd
+            result.append(RecurringTask(
+                name=t["source"],
+                label=t.get("title") or base.label,
+                prompt=t.get("description") or base.prompt,
+                frequency=t.get("rt_frequency") or base.frequency,
+                time=t.get("rt_time") or base.time,
+                days=[d for d in days_str.split(",") if d] if days_str else base.days,
+                day=t.get("rt_day") or base.day,
+                interval_hours=t.get("rt_interval_hours") or base.interval_hours,
+                cwd=str(Path(raw_cwd).expanduser()) if raw_cwd else None,
+            ))
+        return result
 
     def should_run(self, task: RecurringTask, now: Optional[datetime.datetime] = None) -> bool:
         if now is None:

@@ -474,6 +474,8 @@ class PlannerApp(App):
                          description=rt.prompt, horizon="today", priority=2)
             elif match["status"] == "done":
                 update_task(DB_PATH, match["id"], status="open")
+        from planner.scheduler import import_tasks_to_db
+        import_tasks_to_db(DB_PATH)
         import_orphan_sessions(DB_PATH)
         _purge_stale_planner_session_tasks(DB_PATH)
         resume_sessions(DB_PATH)
@@ -765,6 +767,7 @@ class PlannerApp(App):
         save_state(task["id"] if task else None)
 
     def _handle_enter(self) -> None:
+        from planner.scheduler import RECURRING_SOURCES
         right = self.query_one(RightPane)
         if right._mode == "content":
             task = self.query_one(TaskPanel)._selected_task()
@@ -774,6 +777,8 @@ class PlannerApp(App):
                     self._snapshot()
                     self._monitor.stop()
                     self.exit(result=get_backend().attach_cmd(task["screen_session"]))
+                elif task.get("source") in RECURRING_SOURCES:
+                    self._run_named_task(task["source"], task["title"])
                 elif task.get("source") not in TaskPanel.LOCKED_SOURCES:
                     self._prompt_start_session(task)
         elif right._mode == "task":

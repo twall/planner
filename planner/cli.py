@@ -1,7 +1,7 @@
 import json
 import sys
 from pathlib import Path
-from planner.config import DB_PATH
+from planner.config import DB_PATH, TASKS_CONFIG_PATH
 from planner.db import init_db, add_task, list_tasks
 
 INBOX_PATH = Path.home() / ".planner" / "inbox.json"
@@ -27,6 +27,9 @@ Commands:
       --priority N                   Change priority (1=urgent, 5=low)
       --title "..."                  Rename the task
       --desc "..."                   Set the description/prompt
+
+  export
+      Write recurring task schedule fields from DB back to tasks.json.
 
   inbox add <title|json> [--today|--week|--backlog] [--desc "..."]
       Queue a task to ~/.planner/inbox.json (picked up on next planner launch).
@@ -206,6 +209,12 @@ def main(argv: list[str] | None = None) -> int:
         update_task(DB_PATH, task_id, **fields)
         changes = ", ".join(f"{k}={v!r}" for k, v in fields.items())
         print(f"Updated task #{task_id}: {changes}")
+        return 0
+
+    elif command == "export":
+        from planner.scheduler import export_tasks_from_db
+        export_tasks_from_db(DB_PATH)
+        print(f"Exported schedule to {TASKS_CONFIG_PATH}")
         return 0
 
     else:

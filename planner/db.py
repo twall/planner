@@ -35,9 +35,18 @@ def _conn(db_path: Path) -> sqlite3.Connection:
 def init_db(db_path: Path) -> None:
     with _conn(db_path) as conn:
         conn.executescript(SCHEMA)
-        for col, typedef in [("claude_session_id", "TEXT"), ("session_pid", "TEXT"),
-                         ("cwd", "TEXT"), ("disposable", "INTEGER DEFAULT 0"),
-                         ("is_prompt", "INTEGER DEFAULT 1")]:
+        for col, typedef in [
+            ("claude_session_id", "TEXT"),
+            ("session_pid", "TEXT"),
+            ("cwd", "TEXT"),
+            ("disposable", "INTEGER DEFAULT 0"),
+            ("is_prompt", "INTEGER DEFAULT 1"),
+            ("rt_frequency", "TEXT"),
+            ("rt_time", "TEXT"),
+            ("rt_days", "TEXT"),
+            ("rt_day", "TEXT"),
+            ("rt_interval_hours", "REAL"),
+        ]:
             try:
                 conn.execute(f"ALTER TABLE tasks ADD COLUMN {col} {typedef}")
                 conn.commit()
@@ -78,7 +87,8 @@ def list_tasks(db_path: Path, horizon: str = None, status: str = None) -> list[d
 
 def update_task(db_path: Path, task_id: int, **fields) -> None:
     allowed = {"title", "description", "priority", "horizon", "status",
-               "screen_session", "claude_session_id", "session_pid", "cwd", "disposable", "is_prompt"}
+               "screen_session", "claude_session_id", "session_pid", "cwd", "disposable", "is_prompt",
+               "rt_frequency", "rt_time", "rt_days", "rt_day", "rt_interval_hours"}
     updates = {k: v for k, v in fields.items() if k in allowed}
     if not updates:
         return

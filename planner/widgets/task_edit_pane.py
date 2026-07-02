@@ -1,4 +1,3 @@
-import json
 from pathlib import Path
 from textual.app import ComposeResult
 from textual.containers import Horizontal, Vertical
@@ -6,10 +5,9 @@ from textual.message import Message
 from textual.widget import Widget
 from textual.widgets import Button, Input, Label, Static, TextArea
 
-from planner.config import DB_PATH, TASKS_CONFIG_PATH
+from planner.config import DB_PATH
 from planner.db import update_task
-
-RECURRING_SOURCES = {"slack", "git", "sentry"}
+from planner.scheduler import RECURRING_SOURCES
 
 
 class TaskEditPane(Widget):
@@ -125,20 +123,6 @@ class TaskEditPane(Widget):
         return bool(self._current_task and
                     self._current_task.get("source") in RECURRING_SOURCES)
 
-    def _load_schedule(self) -> dict:
-        """Load schedule fields from tasks.json for this task's source."""
-        if not self._is_recurring() or not TASKS_CONFIG_PATH.exists():
-            return {}
-        try:
-            data = json.loads(TASKS_CONFIG_PATH.read_text())
-            source = self._current_task["source"]
-            for rt in data.get("recurring_tasks", []):
-                if rt["name"] == source:
-                    return rt
-        except Exception:
-            pass
-        return {}
-
     def _refresh_fields(self) -> None:
         if not self._current_task:
             return
@@ -153,16 +137,15 @@ class TaskEditPane(Widget):
         btn_start.display = not self._has_live_session
         self.query_one("#edit-cwd", Input).disabled = self._has_live_session
 
-        # Schedule section — only for recurring tasks
+        # Schedule section — only for recurring tasks; values come from DB columns
         sched = self.query_one("#schedule-section")
         sched.display = self._is_recurring()
         if self._is_recurring():
-            rt = self._load_schedule()
-            self.query_one("#edit-frequency", Input).value = rt.get("frequency", "daily")
-            self.query_one("#edit-time", Input).value = rt.get("time", "") or ""
-            days = rt.get("days", [])
-            self.query_one("#edit-days", Input).value = ",".join(days) if days else ""
-            iv = rt.get("interval_hours")
+            t = self._current_task
+            self.query_one("#edit-frequency", Input).value = t.get("rt_frequency") or "daily"
+            self.query_one("#edit-time", Input).value = t.get("rt_time") or ""
+            self.query_one("#edit-days", Input).value = t.get("rt_days") or ""
+            iv = t.get("rt_interval_hours")
             self.query_one("#edit-interval", Input).value = str(iv) if iv is not None else ""
 
         self._update_disposable_btn()
@@ -244,33 +227,6 @@ class TaskEditPane(Widget):
         self._update_hint()
         self.focus()
 
-    def _save_schedule(self) -> None:
-        """Write edited schedule fields back to tasks.json."""
-        if not self._is_recurring() or not TASKS_CONFIG_PATH.exists():
-            return
-        try:
-            data = json.loads(TASKS_CONFIG_PATH.read_text())
-            source = self._current_task["source"]
-            for rt in data.get("recurring_tasks", []):
-                if rt["name"] != source:
-                    continue
-                freq = self.query_one("#edit-frequency", Input).value.strip()
-                if freq:
-                    rt["frequency"] = freq
-                t = self.query_one("#edit-time", Input).value.strip()
-                rt["time"] = t if t else None
-                days_raw = self.query_one("#edit-days", Input).value.strip()
-                rt["days"] = [d.strip() for d in days_raw.split(",") if d.strip()] if days_raw else []
-                iv_raw = self.query_one("#edit-interval", Input).value.strip()
-                try:
-                    rt["interval_hours"] = float(iv_raw) if iv_raw else None
-                except ValueError:
-                    pass
-                break
-            TASKS_CONFIG_PATH.write_text(json.dumps(data, indent=2) + "\n")
-        except Exception:
-            pass
-
     def _save(self) -> None:
         if not self._current_task:
             return
@@ -284,13 +240,25 @@ class TaskEditPane(Widget):
         if is_prompt_val is None:
             is_prompt_val = 1
         is_prompt = int(bool(int(is_prompt_val)))
+        kwargs: dict = dict(description=desc if desc else None,
+                            cwd=cwd if cwd else None,
+                            disposable=disposable,
+                            is_prompt=is_prompt)
         if title:
-            update_task(self._db_path, tid, title=title,
-                        description=desc if desc else None,
-                        cwd=cwd if cwd else None,
-                        disposable=disposable,
-                        is_prompt=is_prompt)
-        self._save_schedule()
+            kwargs["title"] = title
+        if self._is_recurring():
+            freq = self.query_one("#edit-frequency", Input).value.strip()
+            rt_time = self.query_one("#edit-time", Input).value.strip()
+            days_raw = self.query_one("#edit-days", Input).value.strip()
+            iv_raw = self.query_one("#edit-interval", Input).value.strip()
+            kwargs["rt_frequency"] = freq or "daily"
+            kwargs["rt_time"] = rt_time or None
+            kwargs["rt_days"] = days_raw or None
+            try:
+                kwargs["rt_interval_hours"] = float(iv_raw) if iv_raw else None
+            except ValueError:
+                pass
+        update_task(self._db_path, tid, **kwargs)
         self._exit_edit()
         self.post_message(self.TaskSaved(tid))
 
