@@ -777,8 +777,6 @@ class PlannerApp(App):
                     self._snapshot()
                     self._monitor.stop()
                     self.exit(result=get_backend().attach_cmd(task["screen_session"]))
-                elif task.get("source") in RECURRING_SOURCES:
-                    self._run_named_task(task["source"], task["title"])
                 elif task.get("source") not in TaskPanel.LOCKED_SOURCES:
                     self._prompt_start_session(task)
         elif right._mode == "task":

@@ -69,6 +69,13 @@ class ContentPane(Widget):
         else:
             t = Text()
             t.append(task["title"], style="bold")
+            from planner.scheduler import RECURRING_SOURCES
+            if task.get("source") in RECURRING_SOURCES:
+                from planner.db import get_last_run
+                from planner.config import DB_PATH
+                last = get_last_run(DB_PATH, task["source"])
+                t.append("\n")
+                t.append(f"last run: {last}" if last else "never run", style="dim")
             desc = task.get("description")
             if desc:
                 t.append("\n\n")
@@ -77,4 +84,4 @@ class ContentPane(Widget):
                 t.append("\n\n")
                 t.append("No description.", style="dim")
             out.update(t)
-            hint.update("[dim]→: task pane  ·  ctrl+s: start session[/dim]")
+            hint.update("[dim]→: task pane  ·  enter: run now  ·  ctrl+s: start session[/dim]")

@@ -16,6 +16,7 @@ SOURCE_TAG = {
     "jira": "JIRA",
     "freeform": "·",
     "slack": "SLACK",
+    "git": "BB",
     "bitbucket": "BB",
     "sentry": "SENTRY",
 }
@@ -191,7 +192,7 @@ class TaskPanel(Widget):
         idx = self._cursor_idx()
         return self._tasks[idx] if self._tasks else None
 
-    LOCKED_SOURCES = {"slack", "bitbucket", "sentry", "jira", "builtin"}
+    LOCKED_SOURCES = {"jira", "builtin"}
 
     def action_mark_done(self) -> None:
         t = self._selected_task()
