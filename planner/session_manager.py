@@ -104,6 +104,7 @@ def resume_session(db_path: Path, task: dict, cwd: str | None = None,
     name = session_name_for(task_id, task.get("title"))
     shell_cmd = f"exec claude --resume {session_id}"
     backend.launch(name, shell_cmd, cwd=effective_cwd, cols=cols, rows=rows)
+    time.sleep(2)  # wait for claude --resume to initialize before attach
     full_name = _resolve_full_name(backend, name) or name
     update_kwargs: dict = dict(screen_session=full_name)
     if effective_cwd:
