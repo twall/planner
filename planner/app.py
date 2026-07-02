@@ -402,6 +402,7 @@ class PlannerApp(App):
         yield Footer()
 
     def on_mount(self) -> None:
+        import signal
         init_db(DB_PATH)
         self._monitor.start()
         self._apply_keymap()
@@ -412,6 +413,8 @@ class PlannerApp(App):
         self.call_after_refresh(self._startup)
         if self._jira_client:
             self.call_after_refresh(self.action_sync_jira)
+        # Clean exit on SIGHUP (screen/tmux detach) so state is saved
+        signal.signal(signal.SIGHUP, lambda *_: self.call_from_thread(self._clean_exit))
 
     def _apply_keymap(self) -> None:
         from planner.settings import DEFAULT_KEYMAP
@@ -742,6 +745,11 @@ class PlannerApp(App):
         else:
             projects = _decode_project_dirs()
             self.push_screen(ProjectPickerModal(projects), _launch)
+
+    def _clean_exit(self) -> None:
+        self._snapshot()
+        self._monitor.stop()
+        self.exit()
 
     def _snapshot(self) -> None:
         task = self.query_one(TaskPanel)._selected_task()
