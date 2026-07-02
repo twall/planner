@@ -55,6 +55,15 @@ _BUILTIN_TASKS = [
 ]
 
 
+def _purge_stale_planner_session_tasks(db_path: Path) -> None:
+    """Remove tasks imported as orphans that match the old 'planner-{id}' naming scheme."""
+    import re
+    from planner.db import list_tasks, update_task
+    for t in list_tasks(db_path):
+        if t.get("source") == "screen" and re.fullmatch(r"planner-\d+", t.get("title", "")):
+            update_task(db_path, t["id"], status="done")
+
+
 def _install_skills() -> None:
     """Symlink planner skills into ~/.claude/commands/ on first run."""
     _COMMANDS_DIR.mkdir(parents=True, exist_ok=True)
@@ -457,8 +466,12 @@ class PlannerApp(App):
             elif match["status"] == "done":
                 update_task(DB_PATH, match["id"], status="open")
         import_orphan_sessions(DB_PATH)
+        _purge_stale_planner_session_tasks(DB_PATH)
         resume_sessions(DB_PATH)
+        # Eager poll so session states are populated before first render
+        self._monitor._poll()
         panel = self.query_one(TaskPanel)
+        panel.update_sessions(self._monitor.get_sessions())
         panel.refresh_tasks()
         ui = load_state()
         if ui.get("selected_task_id"):

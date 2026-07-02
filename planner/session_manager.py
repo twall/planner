@@ -106,14 +106,36 @@ def import_orphan_sessions(db_path: Path) -> int:
             if "." in t["screen_session"]:
                 linked_names.add(t["screen_session"].split(".", 1)[1])
 
+    task_by_id = {t["id"]: t for t in tasks}
     imported = 0
     for full_name, s in live.items():
         if s["name"] in linked_names or full_name in linked_names:
             continue
+        # Try to relink a planner-owned session to its task by ID suffix
+        relinked = _relink_by_id(db_path, s["name"], full_name, task_by_id)
+        if relinked:
+            continue
+        # Truly orphaned non-planner session — import as new task
+        if s["name"].startswith(SESSION_NAME_PREFIX + "-"):
+            continue  # planner-owned but unresolvable; skip rather than duplicate
         add_task(db_path, source="screen", title=s["name"],
                  screen_session=full_name, horizon="this_week")
         imported += 1
     return imported
+
+
+def _relink_by_id(db_path: Path, name: str, full_name: str,
+                  task_by_id: dict) -> bool:
+    """If session name ends with -{task_id}, relink DB task to this session. Return True if relinked."""
+    import re
+    m = re.search(r"-(\d+)$", name)
+    if not m:
+        return False
+    task_id = int(m.group(1))
+    if task_id not in task_by_id:
+        return False
+    update_task(db_path, task_id, screen_session=full_name)
+    return True
 
 
 def run_recurring_via_session(db_path: Path, task_dict: dict, prompt: str) -> None:
