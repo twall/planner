@@ -30,7 +30,8 @@ python -m planner.cli add "<title>" [--today|--week|--backlog] [--priority N]
 
 List:
 ```bash
-python -m planner.cli list
+python -m planner.cli list           # compact: id, title, horizon, priority
+python -m planner.cli list --verbose # also shows description, cwd, session
 ```
 
 Update (use the id from `list`):

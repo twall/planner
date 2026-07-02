@@ -14,8 +14,9 @@ Commands:
   add <title> [--today|--week|--backlog] [--priority 1-5]
       Add a new task.
 
-  list
+  list [-v|--verbose]
       List all open tasks with id, source, title, horizon, and priority.
+      -v / --verbose also shows description, cwd, and session name.
 
   update <id> [options]
       Update an existing task by id (from `list`).
@@ -71,13 +72,22 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     elif command == "list":
+        verbose = "-v" in rest or "--verbose" in rest
         tasks = list_tasks(DB_PATH)
         if not tasks:
             print("No tasks.")
             return 0
         for t in tasks:
             tag = f"[{t['jira_key']}]" if t.get("jira_key") else f"[{t['source']}]"
-            print(f"  {t['id']:3}. {tag} {t['title']}  ({t['horizon']}, p{t['priority']})")
+            print(f"  {t['id']:3}. {tag} {t['title']}  ({t['horizon']}, p{t['priority']}, status={t['status']})")
+            if verbose:
+                if t.get("description"):
+                    for line in t["description"].splitlines():
+                        print(f"         {line}")
+                if t.get("cwd"):
+                    print(f"       cwd: {t['cwd']}")
+                if t.get("screen_session"):
+                    print(f"   session: {t['screen_session']}")
         return 0
 
     elif command == "inbox":
