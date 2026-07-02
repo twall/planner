@@ -80,7 +80,7 @@ def resume_sessions(db_path: Path) -> int:
         if name in live_names:
             continue
         shell_cmd = f"exec claude --resume {t['claude_session_id']}"
-        backend.launch(name, shell_cmd)
+        backend.launch(name, shell_cmd, cwd=t.get("cwd") or None)
         full_name = _resolve_full_name(backend, name) or name
         update_task(db_path, t["id"], screen_session=full_name)
         resumed += 1
