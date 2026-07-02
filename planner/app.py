@@ -347,6 +347,7 @@ class PlannerApp(App):
         Binding("b", "run_bitbucket", "PRs"),
         Binding("s", "run_slack", "Slack digest"),
         Binding("R", "run_all", "Run all"),
+        Binding("shift+enter", "accept_permission", "Accept", show=False),
         Binding("u", "upgrade", "Upgrade", show=False),
         Binding("q", "quit", "Quit"),
         Binding("T", "change_theme", "Theme", show=False),
@@ -640,6 +641,13 @@ class PlannerApp(App):
 
     def action_show_help(self) -> None:
         self.push_screen(KeymapModal())
+
+    def action_accept_permission(self) -> None:
+        task = self.query_one(TaskPanel)._selected_task()
+        if not task or not task.get("screen_session"):
+            return
+        from planner.session_manager import send_input
+        send_input(task["screen_session"], "\r")
 
     def action_mark_done(self) -> None:
         self.query_one(TaskPanel).action_mark_done()
