@@ -19,6 +19,9 @@ PERMISSION_PATTERNS = [
     re.compile(r'needs your permission', re.IGNORECASE),
     # Claude Code prompt bar: "1 Yes  2 No" or "> Yes  No" on its own line
     re.compile(r'^\s*[>1]\s+Yes\s+', re.MULTILINE),
+    # Claude Code MCP/tool numbered permission list: "2. Yes, and don't ask again" + "Esc to cancel"
+    re.compile(r'Esc to cancel\s*[·•]\s*Tab to amend', re.IGNORECASE),
+    re.compile(r'^\s*\d+\.\s+Yes', re.MULTILINE),
 ]
 
 
