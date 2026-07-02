@@ -41,13 +41,14 @@ def launch_session(db_path: Path, task: dict, cwd: str | None = None,
     name = session_name_for(task_id, task.get("title"))
     session_id = str(uuid.uuid4())
     shell_cmd = f"exec claude --session-id {session_id}"
-    backend.launch(name, shell_cmd, cwd=cwd, cols=cols, rows=rows)
+    effective_launch_cwd = str(Path(cwd).expanduser()) if cwd else None
+    backend.launch(name, shell_cmd, cwd=effective_launch_cwd, cols=cols, rows=rows)
     # full_name differs by backend: screen uses PID.name, tmux uses name
     # Resolve by looking up the just-created session
     full_name = _resolve_full_name(backend, name) or name
     update_kwargs: dict = dict(screen_session=full_name, claude_session_id=session_id)
-    if cwd:
-        update_kwargs["cwd"] = cwd
+    if effective_launch_cwd:
+        update_kwargs["cwd"] = effective_launch_cwd
     update_task(db_path, task_id, **update_kwargs)
     is_prompt = task.get("is_prompt", 1)
     if is_prompt is None:
@@ -96,7 +97,8 @@ def resume_session(db_path: Path, task: dict, cwd: str | None = None,
     backend = get_backend()
     task_id = task["id"]
     session_id = task["claude_session_id"]
-    effective_cwd = cwd or task.get("cwd") or None
+    raw_cwd = cwd or task.get("cwd") or None
+    effective_cwd = str(Path(raw_cwd).expanduser()) if raw_cwd else None
     name = session_name_for(task_id, task.get("title"))
     shell_cmd = f"exec claude --resume {session_id}"
     backend.launch(name, shell_cmd, cwd=effective_cwd, cols=cols, rows=rows)

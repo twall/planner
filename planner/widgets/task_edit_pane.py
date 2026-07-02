@@ -1,3 +1,4 @@
+from pathlib import Path
 from textual.app import ComposeResult
 from textual.containers import Horizontal, Vertical
 from textual.message import Message
@@ -206,7 +207,7 @@ class TaskEditPane(Widget):
         tid = self._current_task["id"]
         title = self.query_one("#edit-title", Input).value.strip()
         desc = self.query_one("#edit-desc", TextArea).text.strip()
-        cwd = self.query_one("#edit-cwd", Input).value.strip()
+        cwd = str(Path(self.query_one("#edit-cwd", Input).value.strip()).expanduser()) if self.query_one("#edit-cwd", Input).value.strip() else ""
         disposable = int(bool(self._current_task.get("disposable")))
         is_prompt_val = self._current_task.get("is_prompt", 1)
         if is_prompt_val is None:
