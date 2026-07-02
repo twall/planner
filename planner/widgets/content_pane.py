@@ -53,6 +53,9 @@ class ContentPane(Widget):
             # Build as Rich Text to avoid markup parser touching raw session output
             t = Text()
             t.append(f"● {session.full_name}  {session.state}", style=color)
+            claude_id = task.get("claude_session_id") if task else None
+            if claude_id:
+                t.append(f"  claude:{claude_id[:8]}", style="dim")
             t.append(f"\n{'─' * 40}\n")
             if lines:
                 for i, line in enumerate(lines):
