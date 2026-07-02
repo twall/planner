@@ -38,6 +38,19 @@ _BUILTIN_TASKS = [
         "horizon": "backlog",
         "priority": 5,
     },
+    {
+        "source": "builtin",
+        "title": "Organize Tasks",
+        "description": (
+            "Review all current planner tasks. "
+            "Reclassify horizons (today/this_week/backlog), adjust priorities (1=urgent, 5=low), "
+            "and rename titles for clarity. "
+            "Use the /planner-organize skill to propose and apply changes interactively."
+        ),
+        "cwd": None,
+        "horizon": "backlog",
+        "priority": 5,
+    },
 ]
 
 
