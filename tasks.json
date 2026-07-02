@@ -7,7 +7,8 @@
       "prompt": "Read the configured Slack channels (see slack_channels in settings.json).\nSummarize new errors and alerts since the last check.\nOutput format — first a SUMMARY line, then a TASKS: section with one task per line:\n- <task title> (<today|this_week|backlog>, priority <1-5>)\nOnly output actionable tasks. If nothing new, output: No new issues found.",
       "frequency": "daily",
       "time": "08:00",
-      "days": ["mon", "tue", "wed", "thu", "fri"]
+      "days": ["mon", "tue", "wed", "thu", "fri"],
+      "cwd": "~/plex/search/ops"
     },
     {
       "name": "git",
@@ -23,7 +24,8 @@
       "label": "Sentry Gap Check",
       "prompt": "Check configured Sentry projects (see sentry_projects in settings.json) for recent issues (last 24h).\nThen check configured Slack channels for the same time window.\nReport ONLY issues present in Sentry but NOT mentioned in Slack (alerting dropouts).\nOutput format — first a SUMMARY line, then a TASKS: section:\n- <task title> (<today|this_week|backlog>, priority <1-5>)\nIf no gaps found, output: No Sentry alerting gaps found.",
       "frequency": "daily",
-      "time": "09:00"
+      "time": "09:00",
+      "cwd": "~/plex/search/ops"
     }
   ]
 }
