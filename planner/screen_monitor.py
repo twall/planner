@@ -15,7 +15,7 @@ PROMPT_PATTERNS = [
 PERMISSION_PATTERNS = [
     # Claude Code permission UI — require the trailing ? to avoid matching content diffs/configs
     re.compile(r'Allow this action\?'),
-    re.compile(r'Do you want to allow', re.IGNORECASE),
+    re.compile(r'Do you want to (allow|proceed)', re.IGNORECASE),
     re.compile(r'needs your permission', re.IGNORECASE),
     # Claude Code prompt bar: "1 Yes  2 No" or "> Yes  No" on its own line
     re.compile(r'^\s*[>1]\s+Yes\s+', re.MULTILINE),
