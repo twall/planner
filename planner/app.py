@@ -347,6 +347,7 @@ class PlannerApp(App):
         Binding("b", "run_bitbucket", "PRs"),
         Binding("s", "run_slack", "Slack digest"),
         Binding("R", "run_all", "Run all"),
+        Binding("i", "ignore_session", "Ignore session", show=True),
         Binding("shift+enter", "accept_permission", "Accept", show=False),
         Binding("u", "upgrade", "Upgrade", show=False),
         Binding("q", "quit", "Quit"),
@@ -642,6 +643,19 @@ class PlannerApp(App):
     def action_show_help(self) -> None:
         self.push_screen(KeymapModal())
 
+    def action_ignore_session(self) -> None:
+        task = self.query_one(TaskPanel)._selected_task()
+        if not task or task.get("source") in ("jira", "builtin"):
+            return
+        from planner.session_manager import ignore_session
+        name = task.get("screen_session", "")
+        short = name.split(".", 1)[1] if "." in name else name
+        if short:
+            ignore_session(short)
+        update_task(DB_PATH, task["id"], status="done", screen_session=None)
+        self.query_one(TaskPanel).refresh_tasks()
+        self.notify(f"Ignored '{short}' — won't be imported again.")
+
     def action_accept_permission(self) -> None:
         task = self.query_one(TaskPanel)._selected_task()
         if not task or not task.get("screen_session"):
@@ -811,7 +825,10 @@ def main():
     import sys
     result_file = sys.argv[1] if len(sys.argv) > 1 else None
     app = PlannerApp()
-    result = app.run()
+    try:
+        result = app.run()
+    except KeyboardInterrupt:
+        result = None
     if result and result_file:
         with open(result_file, "w") as f:
             f.write(result)
