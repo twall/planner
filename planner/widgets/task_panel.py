@@ -194,6 +194,34 @@ class TaskPanel(Widget):
 
     LOCKED_SOURCES = {"jira", "builtin"}
 
+    def action_move_task_up(self) -> None:
+        self._swap_with_neighbour(-1)
+
+    def action_move_task_down(self) -> None:
+        self._swap_with_neighbour(1)
+
+    def _swap_with_neighbour(self, direction: int) -> None:
+        if not self._tasks:
+            return
+        idx = self._cursor_idx()
+        neighbour_idx = idx + direction
+        if neighbour_idx < 0 or neighbour_idx >= len(self._tasks):
+            return
+        a = self._tasks[idx]
+        b = self._tasks[neighbour_idx]
+        # Swap priorities; if crossing horizon boundary, adopt neighbour's horizon
+        a_pri, b_pri = a["priority"], b["priority"]
+        a_horizon, b_horizon = a["horizon"], b["horizon"]
+        kwargs_a: dict = {"priority": b_pri}
+        kwargs_b: dict = {"priority": a_pri}
+        if a_horizon != b_horizon:
+            kwargs_a["horizon"] = b_horizon
+            kwargs_b["horizon"] = a_horizon
+        update_task(self._db_path, a["id"], **kwargs_a)
+        update_task(self._db_path, b["id"], **kwargs_b)
+        self.refresh_tasks()
+        self.select_by_id(a["id"])
+
     def action_mark_done(self) -> None:
         t = self._selected_task()
         if not t:

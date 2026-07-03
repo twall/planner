@@ -339,6 +339,8 @@ class PlannerApp(App):
     BINDINGS = [
         Binding("up", "cursor_up", "Up", show=False),
         Binding("down", "cursor_down", "Down", show=False),
+        Binding("shift+up", "move_task_up", "Move up", show=False),
+        Binding("shift+down", "move_task_down", "Move down", show=False),
 
         Binding("n", "new_task", "New task"),
         Binding("d", "mark_done", "Delete"),
@@ -721,6 +723,18 @@ class PlannerApp(App):
         if isinstance(self.focused, (Input, TextArea)):
             return
         self.query_one(TaskPanel).action_move_cursor_up()
+
+    def action_move_task_up(self) -> None:
+        from textual.widgets import TextArea
+        if isinstance(self.focused, (Input, TextArea)):
+            return
+        self.query_one(TaskPanel).action_move_task_up()
+
+    def action_move_task_down(self) -> None:
+        from textual.widgets import TextArea
+        if isinstance(self.focused, (Input, TextArea)):
+            return
+        self.query_one(TaskPanel).action_move_task_down()
 
     def on_key(self, event) -> None:
         if isinstance(self.focused, (Input,)):
