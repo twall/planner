@@ -760,7 +760,9 @@ class PlannerApp(App):
         cols = max(80, term_cols - 39)
         rows = max(24, term_rows - 4)
 
+        from planner.scheduler import RECURRING_SOURCES
         is_resume = bool(task.get("claude_session_id"))
+        is_recurring = task.get("source") in RECURRING_SOURCES
 
         def _launch(cwd: str | None) -> None:
             if cwd is None:
@@ -770,7 +772,7 @@ class PlannerApp(App):
             from planner.backends import get_backend
 
             async def _do_launch_and_attach() -> None:
-                import asyncio
+                import asyncio, time as _time
                 loop = asyncio.get_event_loop()
                 if is_resume:
                     fn = lambda: resume_session(DB_PATH, task, cwd=cwd, cols=cols, rows=rows)
@@ -778,6 +780,16 @@ class PlannerApp(App):
                     fn = lambda: launch_session(DB_PATH, task, cwd=cwd, cols=cols, rows=rows)
                 full_name = await loop.run_in_executor(None, fn)
                 if full_name:
+                    # For recurring tasks resumed into a previous session, clear and re-prompt
+                    if is_recurring and is_resume:
+                        prompt = task.get("description") or ""
+                        if prompt:
+                            backend = get_backend()
+                            def _reprompt():
+                                backend.send_input(full_name, "/clear")
+                                _time.sleep(0.5)
+                                backend.send_input(full_name, prompt)
+                            await loop.run_in_executor(None, _reprompt)
                     self._snapshot()
                     self._monitor.stop()
                     self.exit(result=get_backend().attach_cmd(full_name))
@@ -809,10 +821,25 @@ class PlannerApp(App):
             task = self.query_one(TaskPanel)._selected_task()
             if task:
                 if task.get("screen_session"):
-                    from planner.backends import get_backend
-                    self._snapshot()
-                    self._monitor.stop()
-                    self.exit(result=get_backend().attach_cmd(task["screen_session"]))
+                    live_session = self._get_session_for_task(task)
+                    if not live_session:
+                        # Dead session — resume or start fresh
+                        if task.get("source") not in TaskPanel.LOCKED_SOURCES:
+                            self._prompt_start_session(task)
+                    else:
+                        from planner.backends import get_backend
+                        backend = get_backend()
+                        if task.get("source") in RECURRING_SOURCES and live_session.state == "IDLE":
+                            # Reuse idle session: clear and re-prompt
+                            prompt = task.get("description") or ""
+                            if prompt:
+                                import time as _time
+                                backend.send_input(task["screen_session"], "/clear")
+                                _time.sleep(0.5)
+                                backend.send_input(task["screen_session"], prompt)
+                        self._snapshot()
+                        self._monitor.stop()
+                        self.exit(result=backend.attach_cmd(task["screen_session"]))
                 elif task.get("source") not in TaskPanel.LOCKED_SOURCES:
                     self._prompt_start_session(task)
         elif right._mode == "task":
