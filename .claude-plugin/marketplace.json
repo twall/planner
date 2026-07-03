@@ -1,0 +1,17 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "planner",
+  "description": "Persistent terminal dashboard for daily/weekly planning and Claude Code session monitoring.",
+  "owner": {
+    "name": "Timothy Wall",
+    "url": "https://github.com/twall/planner"
+  },
+  "plugins": [
+    {
+      "name": "planner",
+      "description": "Terminal TUI for managing tasks with JIRA sync, Claude Code session monitoring, and permission prompt detection.",
+      "source": "./",
+      "category": "productivity"
+    }
+  ]
+}

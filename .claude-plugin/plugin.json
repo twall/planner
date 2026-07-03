@@ -1,0 +1,23 @@
+{
+  "name": "planner",
+  "version": "1.0.0",
+  "description": "Persistent terminal dashboard for daily/weekly planning and Claude Code session monitoring. Tracks JIRA tasks, monitors Claude Code sessions, and surfaces permission prompts.",
+  "author": {
+    "name": "Timothy Wall",
+    "url": "https://github.com/twall/planner"
+  },
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/install-skills.sh\"",
+            "timeout": 5,
+            "statusMessage": "Installing planner skills..."
+          }
+        ]
+      }
+    ]
+  }
+}
