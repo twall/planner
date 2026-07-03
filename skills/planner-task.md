@@ -54,11 +54,36 @@ python -m planner.cli update <id> [--today|--week|--backlog] [--priority N] [--t
 
 Always `list` first to get the task id before updating.
 
-## Title format
+## Title and description format
 
-When a task references a Sentry or JIRA issue, prefix the title with the issue ID:
+When a task references a Sentry or JIRA issue:
+
+**Title** — prefix with the issue ID:
 - Sentry: `WEBAPP-JR: Fix null pointer in auth middleware`
 - JIRA: `PLEX-1234: Review rate limiting gaps`
+
+**Description (prompt)** — MUST include the ticket reference so the claude session knows where to look. Build it from:
+1. The ticket ID/URL as the first line
+2. Any known context (error message, stack trace snippet, issue summary)
+3. A clear action directive
+
+Templates:
+
+Sentry issue:
+```
+Fix Sentry issue WEBAPP-JR (https://sentry.plexsearch.com/organizations/plex/issues/WEBAPP-JR/).
+<one-line summary of the error>
+<stack trace snippet or key detail if available>
+```
+
+JIRA issue:
+```
+Work on JIRA ticket PLEX-1234 (https://plexresearch.atlassian.net/browse/PLEX-1234).
+<summary from the ticket>
+<acceptance criteria or key detail if available>
+```
+
+If you don't have the URL, use just the key — claude can look it up via MCP tools.
 
 ## Examples
 
