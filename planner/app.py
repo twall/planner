@@ -347,6 +347,7 @@ class PlannerApp(App):
         Binding("b", "run_bitbucket", "PRs"),
         Binding("s", "run_slack", "Slack digest"),
         Binding("R", "run_all", "Run all"),
+        Binding("r", "rerun_task", "Re-run", show=False),
         Binding("i", "ignore_session", "Ignore session", show=True),
         Binding("shift+enter", "accept_permission", "Accept", show=False),
         Binding("u", "upgrade", "Upgrade", show=False),
@@ -606,6 +607,30 @@ class PlannerApp(App):
     def action_attach_session(self) -> None:
         self._handle_enter()
 
+    def action_rerun_task(self) -> None:
+        """Re-run the selected recurring task: /clear + re-send prompt into its session."""
+        from planner.scheduler import RECURRING_SOURCES
+        task = self.query_one(TaskPanel)._selected_task()
+        if not task or task.get("source") not in RECURRING_SOURCES:
+            return
+        prompt = task.get("description") or ""
+        if not prompt:
+            return
+        live_session = self._get_session_for_task(task)
+        if live_session and live_session.state == "IDLE":
+            import time as _time
+            from planner.backends import get_backend
+            backend = get_backend()
+            backend.send_input(task["screen_session"], "/clear")
+            _time.sleep(0.5)
+            backend.send_input(task["screen_session"], prompt)
+            self._snapshot()
+            self._monitor.stop()
+            self.exit(result=backend.attach_cmd(task["screen_session"]))
+        else:
+            # No live session or not idle — start/resume normally
+            self._prompt_start_session(task)
+
     def on_task_panel_task_selected(self, event: TaskPanel.TaskSelected) -> None:
         task = event.task
         session = self._get_session_for_task(task)
@@ -780,16 +805,6 @@ class PlannerApp(App):
                     fn = lambda: launch_session(DB_PATH, task, cwd=cwd, cols=cols, rows=rows)
                 full_name = await loop.run_in_executor(None, fn)
                 if full_name:
-                    # For recurring tasks resumed into a previous session, clear and re-prompt
-                    if is_recurring and is_resume:
-                        prompt = task.get("description") or ""
-                        if prompt:
-                            backend = get_backend()
-                            def _reprompt():
-                                backend.send_input(full_name, "/clear")
-                                _time.sleep(0.5)
-                                backend.send_input(full_name, prompt)
-                            await loop.run_in_executor(None, _reprompt)
                     self._snapshot()
                     self._monitor.stop()
                     self.exit(result=get_backend().attach_cmd(full_name))
@@ -829,14 +844,6 @@ class PlannerApp(App):
                     else:
                         from planner.backends import get_backend
                         backend = get_backend()
-                        if task.get("source") in RECURRING_SOURCES and live_session.state == "IDLE":
-                            # Reuse idle session: clear and re-prompt
-                            prompt = task.get("description") or ""
-                            if prompt:
-                                import time as _time
-                                backend.send_input(task["screen_session"], "/clear")
-                                _time.sleep(0.5)
-                                backend.send_input(task["screen_session"], prompt)
                         self._snapshot()
                         self._monitor.stop()
                         self.exit(result=backend.attach_cmd(task["screen_session"]))

@@ -65,8 +65,12 @@ class ContentPane(Widget):
             else:
                 t.append("(no output)", style="dim")
             out.update(t)
+            from planner.scheduler import RECURRING_SOURCES
+            is_recurring = task and task.get("source") in RECURRING_SOURCES
             if session.state == "NEEDS PERMISSION":
                 hint.update("[dim]enter: attach  ·  shift+enter: accept  ·  1-9: pick option[/dim]")
+            elif is_recurring and session.state == "IDLE":
+                hint.update("[dim]enter: attach  ·  r: re-run[/dim]")
             else:
                 hint.update("[dim]enter: attach to session[/dim]")
         else:
