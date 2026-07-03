@@ -102,6 +102,7 @@ class TaskEditPane(Widget):
         self.query_one("#edit-form").display = False
         for btn_id in ("#btn-start", "#btn-disposable", "#btn-is-prompt"):
             self.query_one(btn_id, Button).can_focus = False
+        self.query_one("#edit-desc", TextArea).can_focus = False
 
     def show(self, task: dict | None, has_live_session: bool = False) -> None:
         self._current_task = task
@@ -125,6 +126,8 @@ class TaskEditPane(Widget):
 
     def _refresh_fields(self) -> None:
         if not self._current_task:
+            return
+        if self._editing:
             return
         self.query_one("#edit-title", Input).value = self._current_task.get("title", "")
         desc = self._current_task.get("description") or ""
@@ -188,7 +191,9 @@ class TaskEditPane(Widget):
     def _set_fields_readonly(self, readonly: bool) -> None:
         for inp in self.query(Input):
             inp.disabled = readonly
-        self.query_one("#edit-desc", TextArea).read_only = readonly
+        ta = self.query_one("#edit-desc", TextArea)
+        ta.read_only = readonly
+        ta.can_focus = not readonly
         # cwd always locked when live session active
         if not readonly and self._has_live_session:
             self.query_one("#edit-cwd", Input).disabled = True
@@ -295,10 +300,7 @@ class TaskEditPane(Widget):
             self._toggle_disposable()
         elif event.key == "escape":
             event.stop()
-            if in_textarea:
-                self.query_one("#edit-cwd", Input).focus()
-            else:
-                self._cancel()
+            self._cancel()
         elif event.key in ("down", "up") and not in_textarea:
             event.stop()
             if event.key == "down":
