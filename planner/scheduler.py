@@ -222,12 +222,16 @@ class Scheduler:
             return get_last_run(self._db_path, task_name) != today
         return self.should_run(task)
 
-    def _invoke_claude(self, prompt: str, cwd: str | None = None) -> str | None:
-        result = subprocess.run(
-            ["claude", "--print", prompt],
-            capture_output=True, text=True, timeout=120,
-            cwd=cwd or None,
-        )
+    def _invoke_claude(self, prompt: str, cwd: str | None = None,
+                       timeout: int = 600) -> str | None:
+        try:
+            result = subprocess.run(
+                ["claude", "--print", prompt],
+                capture_output=True, text=True, timeout=timeout,
+                cwd=cwd or None,
+            )
+        except subprocess.TimeoutExpired:
+            return None
         if result.returncode != 0:
             return None
         return result.stdout
