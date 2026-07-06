@@ -7,6 +7,7 @@ TASKS_CONFIG_PATH = PLANNER_ROOT / "tasks.json"
 SETTINGS_PATH = PLANNER_ROOT / "settings.json"
 
 STATE_PATH = Path.home() / ".planner" / "state.json"
+IGNORED_SESSIONS_PATH = Path.home() / ".planner" / "ignored_sessions.json"
 
 SCREEN_POLL_INTERVAL = 5
 SCREEN_IDLE_THRESHOLD = 30

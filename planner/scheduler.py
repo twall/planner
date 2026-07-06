@@ -237,21 +237,17 @@ class Scheduler:
         return result.stdout
 
     def run_task(self, task: RecurringTask) -> list[dict]:
-        output = self._invoke_claude(task.prompt, cwd=task.cwd)
-        if output is None:
-            return []
-        parsed = parse_claude_output(output)
-        for item in parsed:
-            add_task(
-                self._db_path,
-                source=task.name,
-                title=item["title"],
-                horizon=item.get("horizon", "today"),
-                priority=item.get("priority", 3),
-                description=item.get("description"),
-            )
+        from planner.db import list_tasks
+        from planner.session_manager import run_recurring_via_session
+        db_tasks = {t["source"]: t for t in list_tasks(self._db_path)
+                    if t["source"] in RECURRING_SOURCES}
+        task_dict = db_tasks.get(task.name)
+        if task_dict:
+            run_recurring_via_session(self._db_path, task_dict, task.prompt)
+        else:
+            self._invoke_claude(task.prompt, cwd=task.cwd)
         set_last_run(self._db_path, task.name, datetime.datetime.now().isoformat())
-        return parsed
+        return []
 
     def run_all_due(self) -> None:
         now = datetime.datetime.now()

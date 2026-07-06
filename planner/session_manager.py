@@ -1,9 +1,25 @@
+import json
 import time
 import uuid
 from pathlib import Path
 
 from planner.backends import get_backend
+from planner.config import IGNORED_SESSIONS_PATH
 from planner.db import add_task, list_tasks, update_task
+
+
+def load_ignored_sessions() -> set[str]:
+    try:
+        return set(json.loads(IGNORED_SESSIONS_PATH.read_text()))
+    except Exception:
+        return set()
+
+
+def ignore_session(name: str) -> None:
+    ignored = load_ignored_sessions()
+    ignored.add(name)
+    IGNORED_SESSIONS_PATH.parent.mkdir(parents=True, exist_ok=True)
+    IGNORED_SESSIONS_PATH.write_text(json.dumps(sorted(ignored), indent=2))
 
 SESSION_NAME_PREFIX = "planner"
 
@@ -33,8 +49,21 @@ def _live_sessions() -> dict[str, dict]:
         return {}
 
 
+def _wait_for_claude_ready(backend, full_name: str, timeout: float = 15.0) -> bool:
+    """Poll screen capture until claude's input prompt is visible. Returns True if ready."""
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        lines = backend.capture(full_name)
+        content = "\n".join(lines)
+        if ">" in content or "❯" in content or "?" in content:
+            return True
+        time.sleep(0.5)
+    return False
+
+
 def launch_session(db_path: Path, task: dict, cwd: str | None = None,
-                   cols: int = 220, rows: int = 50) -> str:
+                   cols: int = 220, rows: int = 50,
+                   send_prompt: bool = True) -> str:
     """Launch a multiplexer session + claude for task. Returns session full_name."""
     backend = get_backend()
     task_id = task["id"]
@@ -53,8 +82,8 @@ def launch_session(db_path: Path, task: dict, cwd: str | None = None,
     is_prompt = task.get("is_prompt", 1)
     if is_prompt is None:
         is_prompt = 1
-    if task.get("description") and bool(int(is_prompt)):
-        time.sleep(2)
+    if send_prompt and task.get("description") and bool(int(is_prompt)):
+        _wait_for_claude_ready(backend, full_name)
         backend.send_input(full_name, task["description"])
     return full_name
 
@@ -132,10 +161,13 @@ def import_orphan_sessions(db_path: Path) -> int:
             if "." in t["screen_session"]:
                 linked_names.add(t["screen_session"].split(".", 1)[1])
 
+    ignored = load_ignored_sessions()
     task_by_id = {t["id"]: t for t in tasks}
     imported = 0
     for full_name, s in live.items():
         if s["name"] in linked_names or full_name in linked_names:
+            continue
+        if s["name"] in ignored or full_name in ignored:
             continue
         # Try to relink a planner-owned session to its task by ID suffix
         relinked = _relink_by_id(db_path, s["name"], full_name, task_by_id)
@@ -172,9 +204,9 @@ def run_recurring_via_session(db_path: Path, task_dict: dict, prompt: str) -> No
         name = task_dict["screen_session"]
         if any(s["name"] == name or s["full_name"] == name for s in live.values()):
             backend.send_input(name, "/clear")
-            time.sleep(1)
+            _wait_for_claude_ready(backend, name)
             backend.send_input(name, prompt)
             return
-    launch_session(db_path, task_dict)
-    time.sleep(2)
-    backend.send_input(session_name_for(task_dict["id"], task_dict.get("title")), prompt)
+    full_name = launch_session(db_path, task_dict, send_prompt=False)
+    _wait_for_claude_ready(backend, full_name)
+    backend.send_input(full_name, prompt)

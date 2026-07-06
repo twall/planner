@@ -1,3 +1,5 @@
+import asyncio
+import concurrent.futures
 import datetime
 import json
 import os
@@ -869,10 +871,29 @@ class PlannerApp(App):
                 ep.enter_edit()
 
 
+class _DaemonThreadPoolExecutor(concurrent.futures.ThreadPoolExecutor):
+    """ThreadPoolExecutor whose worker threads are daemon threads.
+
+    Prevents interpreter hang on exit when a background task (e.g. a
+    long-running subprocess via run_in_executor) is still in flight after
+    the Textual event loop has stopped.
+    """
+    def _adjust_thread_count(self):
+        super()._adjust_thread_count()
+        for t in self._threads:
+            t.daemon = True
+
+
 def main():
     import sys
     result_file = sys.argv[1] if len(sys.argv) > 1 else None
     app = PlannerApp()
+    # Use daemon threads in the default executor so pending background tasks
+    # don't block interpreter shutdown after the Textual loop exits.
+    _executor = _DaemonThreadPoolExecutor(max_workers=4, thread_name_prefix="planner")
+    loop = asyncio.new_event_loop()
+    loop.set_default_executor(_executor)
+    asyncio.set_event_loop(loop)
     try:
         result = app.run()
     except KeyboardInterrupt:
