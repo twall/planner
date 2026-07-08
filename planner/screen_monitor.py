@@ -10,8 +10,8 @@ PROMPT_PATTERNS = [
     re.compile(r'\[y/N\]', re.IGNORECASE),
     re.compile(r'\(y/n\)', re.IGNORECASE),
     re.compile(r'\(Yes/No\)', re.IGNORECASE),
-    # Claude interactive selection menu
-    re.compile(r'Enter to select\s*[·•]\s*[↑↓]', re.IGNORECASE),
+    # Claude interactive selection menu (footer always has both nav and Esc to cancel)
+    re.compile(r'Enter to select\s*[·•].*Esc to cancel', re.IGNORECASE),
 ]
 
 PERMISSION_PATTERNS = [
