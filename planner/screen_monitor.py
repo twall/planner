@@ -42,11 +42,14 @@ def detect_state(lines: list[str], idle_seconds: float, attached: bool = False,
     if attached:
         return "ATTACHED"
     text = "\n".join(lines)
+    # PERMISSION_PATTERNS scan full buffer (permission dialogs may span more lines)
     for pattern in PERMISSION_PATTERNS:
         if pattern.search(text):
             return "NEEDS PERMISSION"
+    # PROMPT_PATTERNS scan only recent lines — avoids false matches from scrollback history
+    recent = "\n".join(lines[-20:])
     for pattern in PROMPT_PATTERNS:
-        if pattern.search(text):
+        if pattern.search(recent):
             return "NEEDS INPUT"
     if idle_seconds >= idle_threshold:
         return "IDLE"
