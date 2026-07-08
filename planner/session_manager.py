@@ -50,12 +50,12 @@ def _live_sessions() -> dict[str, dict]:
 
 
 def _wait_for_claude_ready(backend, full_name: str, timeout: float = 15.0) -> bool:
-    """Poll screen capture until claude's input prompt is visible. Returns True if ready."""
+    """Poll screen capture until claude's idle input prompt is visible. Returns True if ready."""
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         lines = backend.capture(full_name)
         content = "\n".join(lines)
-        if ">" in content or "❯" in content or "?" in content:
+        if ">" in content or "❯" in content:
             return True
         time.sleep(0.5)
     return False
@@ -203,7 +203,11 @@ def run_recurring_via_session(db_path: Path, task_dict: dict, prompt: str) -> No
         live = _live_sessions()
         name = task_dict["screen_session"]
         if any(s["name"] == name or s["full_name"] == name for s in live.values()):
-            backend.send_input(name, "/clear")
+            if not _wait_for_claude_ready(backend, name, timeout=2.0):
+                # Session busy (mid-task or waiting for user input) — skip this run
+                return
+            # \r first to abort any buffered input, then /clear
+            backend.send_input(name, "\r/clear")
             _wait_for_claude_ready(backend, name)
             backend.send_input(name, prompt)
             return

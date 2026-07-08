@@ -277,7 +277,7 @@ class TaskEditPane(Widget):
             return
         event.stop()
         if event.input.id == "edit-title":
-            self.query_one("#edit-desc", TextArea).focus()
+            self._save()
         elif event.input.id == "edit-cwd":
             if self._is_recurring():
                 self.query_one("#edit-frequency", Input).focus()
