@@ -24,18 +24,7 @@ def ignore_session(name: str) -> None:
 SESSION_NAME_PREFIX = "planner"
 
 
-def _slugify(title: str) -> str:
-    """Convert task title to a safe session name component."""
-    import re
-    slug = title.lower().strip()
-    slug = re.sub(r"[^a-z0-9]+", "-", slug)
-    slug = slug.strip("-")
-    return slug[:40] or "task"
-
-
 def session_name_for(task_id: int, title: str | None = None) -> str:
-    if title:
-        return f"{SESSION_NAME_PREFIX}-{_slugify(title)}-{task_id}"
     return f"{SESSION_NAME_PREFIX}-{task_id}"
 
 
@@ -47,6 +36,11 @@ def _live_sessions() -> dict[str, dict]:
                               "attached": s.attached} for s in sessions}
     except Exception:
         return {}
+
+
+def _rename_claude_session(backend, full_name: str, title: str) -> None:
+    """Send /rename <title> to set the Claude session name."""
+    backend.send_input(full_name, f"/rename {title}")
 
 
 def _wait_for_claude_ready(backend, full_name: str, timeout: float = 15.0) -> bool:
@@ -82,6 +76,9 @@ def launch_session(db_path: Path, task: dict, cwd: str | None = None,
     is_prompt = task.get("is_prompt", 1)
     if is_prompt is None:
         is_prompt = 1
+    if task.get("title"):
+        _wait_for_claude_ready(backend, full_name)
+        _rename_claude_session(backend, full_name, task["title"])
     if send_prompt and task.get("description") and bool(int(is_prompt)):
         _wait_for_claude_ready(backend, full_name)
         backend.send_input(full_name, task["description"])
@@ -104,13 +101,15 @@ def resume_sessions(db_path: Path) -> int:
     backend = get_backend()
     live = _live_sessions()
     live_names = {s["name"] for s in live.values()}
+    live_full_names = set(live.keys())
     tasks = list_tasks(db_path)
     resumed = 0
     for t in tasks:
         if not t.get("claude_session_id"):
             continue
-        name = session_name_for(t["id"], t.get("title"))
-        if name in live_names:
+        name = session_name_for(t["id"])
+        stored = t.get("screen_session") or ""
+        if name in live_names or stored in live_names or stored in live_full_names:
             continue
         shell_cmd = f"exec claude --resume {t['claude_session_id']}"
         raw = t.get("cwd") or None
@@ -139,6 +138,9 @@ def resume_session(db_path: Path, task: dict, cwd: str | None = None,
     if effective_cwd:
         update_kwargs["cwd"] = effective_cwd
     update_task(db_path, task_id, **update_kwargs)
+    if task.get("title"):
+        _wait_for_claude_ready(backend, full_name)
+        _rename_claude_session(backend, full_name, task["title"])
     return full_name
 
 

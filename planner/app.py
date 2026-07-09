@@ -147,6 +147,37 @@ class KeymapModal(ModalScreen):
             yield Label(KEYMAP_TEXT)
 
 
+class ShellCommandModal(ModalScreen[str | None]):
+    CSS = """
+    ShellCommandModal {
+        align: center middle;
+    }
+    #shell-box {
+        width: 80;
+        height: auto;
+        border: solid $accent;
+        padding: 1 2;
+        background: $surface;
+    }
+    #shell-box Input {
+        margin-top: 1;
+    }
+    """
+    BINDINGS = [("escape", "dismiss", "Cancel")]
+
+    def compose(self) -> ComposeResult:
+        with Static(id="shell-box"):
+            yield Label("[bold]Shell command[/bold]  [dim](esc to cancel)[/dim]")
+            yield Input(placeholder="command…", id="shell-input")
+
+    def on_mount(self) -> None:
+        self.query_one("#shell-input", Input).focus()
+
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        cmd = event.value.strip()
+        self.dismiss(cmd if cmd else None)
+
+
 class AddTaskModal(ModalScreen[str | None]):
     CSS = """
     AddTaskModal {
@@ -362,6 +393,7 @@ class PlannerApp(App):
         Binding("J", "cursor_down", "Down", show=False),
         Binding("K", "cursor_up", "Up", show=False),
         Binding("D", "toggle_done", "Show done", show=False),
+        Binding("exclamation_mark", "shell_command", "Shell", show=False),
     ]
 
     def __init__(self):
@@ -650,6 +682,14 @@ class PlannerApp(App):
     def on_task_edit_pane_task_saved(self, event: TaskEditPane.TaskSaved) -> None:
         self.query_one(TaskPanel).refresh_tasks()
         self.notify("Saved")
+        tasks = list_tasks(DB_PATH)
+        task = next((t for t in tasks if t["id"] == event.task_id), None)
+        if task and task.get("screen_session") and task.get("title"):
+            live = self._get_session_for_task(task)
+            if live:
+                from planner.session_manager import _rename_claude_session
+                from planner.backends import get_backend
+                _rename_claude_session(get_backend(), task["screen_session"], task["title"])
 
     def on_task_edit_pane_edit_cancelled(self, event: TaskEditPane.EditCancelled) -> None:
         pass  # stay in task pane; hint already updated by TaskEditPane
@@ -713,6 +753,28 @@ class PlannerApp(App):
             self.notify(f"Added: {title}")
 
         self.push_screen(AddTaskModal(), _on_title)
+
+    def action_shell_command(self) -> None:
+        def _on_cmd(cmd: str | None) -> None:
+            if not cmd:
+                return
+            import subprocess
+            try:
+                result = subprocess.run(
+                    cmd, shell=True, capture_output=True, text=True, timeout=30,
+                    env={**os.environ, "TERM": "xterm-256color"},
+                )
+                output = (result.stdout + result.stderr).strip()
+                if output:
+                    self.notify(output[:400], title=f"$ {cmd[:40]}", timeout=10)
+                else:
+                    self.notify(f"(exit {result.returncode})", title=f"$ {cmd[:40]}", timeout=5)
+            except subprocess.TimeoutExpired:
+                self.notify("Timed out after 30s", title=f"$ {cmd[:40]}", severity="error")
+            except Exception as e:
+                self.notify(str(e), title="Shell error", severity="error")
+
+        self.push_screen(ShellCommandModal(), _on_cmd)
 
     def action_cursor_down(self) -> None:
         from textual.widgets import TextArea
