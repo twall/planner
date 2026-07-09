@@ -40,7 +40,16 @@ def _live_sessions() -> dict[str, dict]:
 
 def _rename_claude_session(backend, full_name: str, title: str) -> None:
     """Send /rename <title> to set the Claude session name."""
-    backend.send_input(full_name, f"/rename {title}")
+    safe_title = title.replace("\n", " ").replace("\r", " ").strip()
+    backend.send_input(full_name, f"/rename {safe_title}")
+
+
+def _send_commands(backend, full_name: str, text: str) -> None:
+    """Send each line of text as a separate command, waiting for Claude ready between them."""
+    lines = [l for l in text.split("\n") if l.strip()]
+    for line in lines:
+        _wait_for_claude_ready(backend, full_name)
+        backend.send_input(full_name, line)
 
 
 def _wait_for_claude_ready(backend, full_name: str, timeout: float = 15.0) -> bool:
@@ -80,8 +89,7 @@ def launch_session(db_path: Path, task: dict, cwd: str | None = None,
         _wait_for_claude_ready(backend, full_name)
         _rename_claude_session(backend, full_name, task["title"])
     if send_prompt and task.get("description") and bool(int(is_prompt)):
-        _wait_for_claude_ready(backend, full_name)
-        backend.send_input(full_name, task["description"])
+        _send_commands(backend, full_name, task["description"])
     return full_name
 
 
@@ -210,9 +218,7 @@ def run_recurring_via_session(db_path: Path, task_dict: dict, prompt: str) -> No
                 return
             # \r first to abort any buffered input, then /clear
             backend.send_input(name, "\r/clear")
-            _wait_for_claude_ready(backend, name)
-            backend.send_input(name, prompt)
+            _send_commands(backend, name, prompt)
             return
     full_name = launch_session(db_path, task_dict, send_prompt=False)
-    _wait_for_claude_ready(backend, full_name)
-    backend.send_input(full_name, prompt)
+    _send_commands(backend, full_name, prompt)
