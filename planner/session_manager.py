@@ -45,11 +45,11 @@ def _rename_claude_session(backend, full_name: str, title: str) -> None:
 
 
 def _send_commands(backend, full_name: str, text: str) -> None:
-    """Send each line of text as a separate command, waiting for Claude ready between them."""
-    lines = [l for l in text.split("\n") if l.strip()]
-    for line in lines:
-        _wait_for_claude_ready(backend, full_name)
-        backend.send_input(full_name, line)
+    """Send prompt as a single command (newlines would submit early in screen/tmux)."""
+    lines = [l.strip() for l in text.split("\n") if l.strip()]
+    prompt = " ".join(lines)
+    _wait_for_claude_ready(backend, full_name)
+    backend.send_input(full_name, prompt)
 
 
 def _wait_for_claude_ready(backend, full_name: str, timeout: float = 15.0) -> bool:
