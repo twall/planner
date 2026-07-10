@@ -13,7 +13,7 @@
     {
       "name": "git",
       "label": "PR Review",
-      "prompt": "Check open pull requests in the configured repositories (see git_repos in settings.json).\nFor each repo URL, determine the host: use the Bitbucket API for bitbucket.org URLs, GitHub API for github.com URLs.\nFind PRs that need action: approve, respond, or first review.\nOutput format — first a SUMMARY line, then a TASKS: section:\n- <task title> (<today|this_week|backlog>, priority <1-5>)\nIf nothing needs action, output: No PR action needed.",
+      "prompt": "/pr-review",
       "frequency": "daily",
       "time": "08:00",
       "days": ["mon", "tue", "wed", "thu", "fri"],
