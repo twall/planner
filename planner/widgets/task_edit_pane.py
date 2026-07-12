@@ -138,7 +138,6 @@ class TaskEditPane(Widget):
         # Show "Start Session" when no live session is active
         btn_start = self.query_one("#btn-start", Button)
         btn_start.display = not self._has_live_session
-        self.query_one("#edit-cwd", Input).disabled = self._has_live_session
 
         # Schedule section — only for recurring tasks; values come from DB columns
         sched = self.query_one("#schedule-section")
@@ -194,9 +193,6 @@ class TaskEditPane(Widget):
         ta = self.query_one("#edit-desc", TextArea)
         ta.read_only = readonly
         ta.can_focus = not readonly
-        # cwd always locked when live session active
-        if not readonly and self._has_live_session:
-            self.query_one("#edit-cwd", Input).disabled = True
 
     def _update_hint(self) -> None:
         hint = self.query_one("#edit-hint", Static)
