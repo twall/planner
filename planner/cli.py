@@ -28,6 +28,9 @@ Commands:
       --title "..."                  Rename the task
       --desc "..."                   Set the description/prompt
 
+  launch <id> [--cwd <path>]
+      Launch a new Claude session for an existing task and send its description as the prompt.
+
   export
       Write recurring task schedule fields from DB back to tasks.json.
 
@@ -209,6 +212,32 @@ def main(argv: list[str] | None = None) -> int:
         update_task(DB_PATH, task_id, **fields)
         changes = ", ".join(f"{k}={v!r}" for k, v in fields.items())
         print(f"Updated task #{task_id}: {changes}")
+        return 0
+
+    elif command == "launch":
+        if not rest or rest[0].startswith("--"):
+            print("Usage: planner.cli launch <id> [--cwd <path>]", file=sys.stderr)
+            return 1
+        try:
+            task_id = int(rest[0])
+        except ValueError:
+            print(f"Error: id must be an integer, got {rest[0]!r}", file=sys.stderr)
+            return 1
+        cwd = None
+        i = 1
+        while i < len(rest):
+            if rest[i] == "--cwd" and i + 1 < len(rest):
+                cwd = rest[i + 1]
+                i += 1
+            i += 1
+        tasks = list_tasks(DB_PATH)
+        t = next((t for t in tasks if t["id"] == task_id), None)
+        if t is None:
+            print(f"No task with id {task_id}", file=sys.stderr)
+            return 1
+        from planner.session_manager import launch_session
+        full_name = launch_session(DB_PATH, t, cwd=cwd or t.get("cwd"))
+        print(f"Launched session {full_name} for task #{task_id}: {t['title']}")
         return 0
 
     elif command == "export":

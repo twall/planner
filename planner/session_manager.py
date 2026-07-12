@@ -67,7 +67,13 @@ def _wait_for_claude_ready(backend, full_name: str, timeout: float = 15.0) -> bo
 def launch_session(db_path: Path, task: dict, cwd: str | None = None,
                    cols: int = 220, rows: int = 50,
                    send_prompt: bool = True) -> str:
-    """Launch a multiplexer session + claude for task. Returns session full_name."""
+    """Launch a multiplexer session + claude for task. Returns session full_name.
+
+    If task already has a claude_session_id, resumes that session instead of
+    creating a new one (preserving conversation history).
+    """
+    if task.get("claude_session_id"):
+        return resume_session(db_path, task, cwd=cwd, cols=cols, rows=rows)
     backend = get_backend()
     task_id = task["id"]
     name = session_name_for(task_id, task.get("title"))
@@ -88,6 +94,7 @@ def launch_session(db_path: Path, task: dict, cwd: str | None = None,
     if task.get("title"):
         _wait_for_claude_ready(backend, full_name)
         _rename_claude_session(backend, full_name, task["title"])
+        time.sleep(0.5)  # let /rename complete before sending description
     if send_prompt and task.get("description") and bool(int(is_prompt)):
         _send_commands(backend, full_name, task["description"])
     return full_name
