@@ -45,16 +45,16 @@ Determine a session name from the current directory:
 basename "$(pwd)" | tr '[:upper:] ' '[:lower:]-' | sed 's/[^a-z0-9-]//g'
 ```
 
-Then tell the user to run this command (substitute `SESSION_ID` and `SESSION_NAME`):
+Then tell the user to run this command (substitute `SESSION_ID`):
 
 ```
-! PLANNER_DIR="${PLANNER_INSTALL_DIR:-$HOME/planner}" && screen -S "planner-SESSION_NAME-SESSION_ID_SHORT" -dm bash -c "exec claude --resume SESSION_ID" && "$PLANNER_DIR/scripts/planner"
+! PLANNER_DIR="${PLANNER_INSTALL_DIR:-$HOME/planner}" && screen -S "planner" -dm bash -c "exec claude --resume SESSION_ID" && "$PLANNER_DIR/scripts/planner"
 ```
 
 Where:
-- `SESSION_ID` = value of `$CLAUDE_CODE_SESSION_ID`  
-- `SESSION_ID_SHORT` = first 8 chars of session ID
-- `SESSION_NAME` = slugified basename of current working directory
+- `SESSION_ID` = value of `$CLAUDE_CODE_SESSION_ID`
+
+The planner's own screen session is always named `"planner"` so it's easy to find with `screen -r planner`. Task sessions spawned by the planner use the prefix `task-` (e.g. `task-21`).
 
 **Explain to the user:** "This moves your Claude session into a screen session so planner can monitor it, then launches planner. Run the command above with `!` to execute it in your terminal."
 

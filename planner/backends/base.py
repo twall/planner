@@ -28,6 +28,10 @@ class SessionBackend(ABC):
         """Send text + Enter to a session."""
 
     @abstractmethod
+    def send_raw(self, full_name: str, text: str) -> None:
+        """Send raw bytes to a session with no appended Enter."""
+
+    @abstractmethod
     def attach_cmd(self, full_name: str) -> str:
         """Return the shell command string to attach to this session."""
 

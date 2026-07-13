@@ -21,10 +21,14 @@ def ignore_session(name: str) -> None:
     IGNORED_SESSIONS_PATH.parent.mkdir(parents=True, exist_ok=True)
     IGNORED_SESSIONS_PATH.write_text(json.dumps(sorted(ignored), indent=2))
 
-SESSION_NAME_PREFIX = "planner"
+SESSION_NAME_PREFIX = "task"
 
 
 def session_name_for(task_id: int, title: str | None = None) -> str:
+    if title:
+        import re
+        slug = re.sub(r'[^a-z0-9]+', '-', title.lower()).strip('-')[:30]
+        return f"{SESSION_NAME_PREFIX}-{task_id}-{slug}"
     return f"{SESSION_NAME_PREFIX}-{task_id}"
 
 
@@ -183,9 +187,9 @@ def import_orphan_sessions(db_path: Path) -> int:
         relinked = _relink_by_id(db_path, s["name"], full_name, task_by_id)
         if relinked:
             continue
-        # Truly orphaned non-planner session — import as new task
-        if s["name"].startswith(SESSION_NAME_PREFIX + "-"):
-            continue  # planner-owned but unresolvable; skip rather than duplicate
+        # Skip planner-owned sessions (task-NNN) and the planner TUI session itself
+        if s["name"].startswith(SESSION_NAME_PREFIX + "-") or s["name"] == "planner":
+            continue
         add_task(db_path, source="screen", title=s["name"],
                  screen_session=full_name, horizon="this_week")
         imported += 1
@@ -194,9 +198,10 @@ def import_orphan_sessions(db_path: Path) -> int:
 
 def _relink_by_id(db_path: Path, name: str, full_name: str,
                   task_by_id: dict) -> bool:
-    """If session name ends with -{task_id}, relink DB task to this session. Return True if relinked."""
+    """If session name contains -{task_id} (as prefix-id or prefix-id-slug), relink to task. Return True if relinked."""
     import re
-    m = re.search(r"-(\d+)$", name)
+    # Match both old format (planner-NNN) and new format (task-NNN or task-NNN-slug)
+    m = re.search(r"-(\d+)(?:-|$)", name)
     if not m:
         return False
     task_id = int(m.group(1))
@@ -216,8 +221,12 @@ def run_recurring_via_session(db_path: Path, task_dict: dict, prompt: str) -> No
             if not _wait_for_claude_ready(backend, name, timeout=2.0):
                 # Session busy (mid-task or waiting for user input) — skip this run
                 return
-            # \r first to abort any buffered input, then /clear
-            backend.send_input(name, "\r/clear")
+            # Escape aborts any buffered input without submitting it, then /clear resets context
+            backend.send_raw(name, "\033")
+            time.sleep(0.1)
+            backend.send_input(name, "/clear")
+            # Sleep after /clear so SessionStart hooks finish rendering before we poll for ready
+            time.sleep(1.5)
             _send_commands(backend, name, prompt)
             return
     full_name = launch_session(db_path, task_dict, send_prompt=False)

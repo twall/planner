@@ -42,6 +42,12 @@ class TmuxBackend(SessionBackend):
             capture_output=True, timeout=5
         )
 
+    def send_raw(self, full_name: str, text: str) -> None:
+        subprocess.run(
+            ["tmux", "send-keys", "-t", full_name, text],
+            capture_output=True, timeout=5
+        )
+
     def attach_cmd(self, full_name: str) -> str:
         return f"tmux attach -t {full_name}"
 

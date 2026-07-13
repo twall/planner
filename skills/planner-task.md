@@ -101,3 +101,33 @@ User: "move the imap review to today and make it priority 1"
 
 User: "set the description for task 7 to 'run the benchmark suite'"
 → `python -m planner.cli update 7 --desc "run the benchmark suite"`
+
+## Recurring / Scheduled Tasks
+
+Tasks with `rt_frequency` set are scheduled tasks. Key fields (visible via `get <id>`):
+- `rt_frequency`: `"daily"` | `"weekly"` | `"interval"`
+- `rt_time`: earliest wall-clock time to run (e.g. `"08:00"`)
+- `rt_days`: comma-separated weekdays (e.g. `"mon,tue,wed,thu,fri"`)
+- `is_prompt`: if `1`, the `description` is sent as a prompt to the Claude session
+
+Sources that support recurring: `slack`, `git`, `sentry`. The `source` field identifies type.
+
+### How the scheduler runs a task (`scheduler.py` → `session_manager.py`)
+
+`Scheduler.run_task()` calls `run_recurring_via_session()`:
+
+1. If a live screen/tmux session exists for the task and Claude is idle (polls for `>` or `❯`):
+   - Sends `\033` (Escape) via `send_raw` to abort buffered input without submitting, then `/clear` via `send_input`
+   - Sleeps 1.5s after `/clear` so SessionStart hooks finish rendering before polling for idle
+   - Waits for Claude idle again, then sends the prompt
+2. Otherwise: launches a new session and sends the prompt
+
+### Known bug: `/clear` + prompt race condition
+
+**Symptom**: Scheduled task appears to run — `/clear` fires and prompt text is injected — but the task description is treated as user-typed text rather than executed (skill invocations don't fire, or text lands mid-render).
+
+**Root cause**: `_wait_for_claude_ready` polls for `>` or `❯` in the screen capture. After `/clear`, any active `SessionStart` hook (e.g. caveman mode) immediately outputs text containing `>` or `❯`, causing the poller to return too early. The prompt is then sent while Claude is still rendering the `/clear` output.
+
+**Location**: `planner/session_manager.py`, `run_recurring_via_session()` (~line 209).
+
+**Fix**: Send `\033` (Escape) via `send_raw` to abort buffer without submitting, then `/clear`, then sleep 1.5s before polling for idle. Fixed in `session_manager.py` `run_recurring_via_session()`.

@@ -40,6 +40,12 @@ class ScreenBackend(SessionBackend):
             capture_output=True, timeout=5
         )
 
+    def send_raw(self, full_name: str, text: str) -> None:
+        subprocess.run(
+            ["screen", "-S", full_name, "-X", "stuff", text],
+            capture_output=True, timeout=5
+        )
+
     def attach_cmd(self, full_name: str) -> str:
         return f"screen -d -r {full_name}"
 
