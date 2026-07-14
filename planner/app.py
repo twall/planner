@@ -31,6 +31,7 @@ _INBOX_PATH = Path.home() / ".planner" / "inbox.json"
 
 _BUILTIN_TASKS = [
     {
+        "key": "improve-planner",
         "source": "builtin",
         "title": "Improve Planner",
         "description": (
@@ -42,6 +43,7 @@ _BUILTIN_TASKS = [
         "priority": 5,
     },
     {
+        "key": "organize-sessions",
         "source": "builtin",
         "title": "Organize Sessions",
         "description": (
@@ -497,14 +499,27 @@ class PlannerApp(App):
         with _conn(DB_PATH) as conn:
             all_rows = [dict(r) for r in conn.execute("SELECT * FROM tasks").fetchall()]
         for bt in _BUILTIN_TASKS:
-            match = next((t for t in all_rows if t["source"] == "builtin"
-                          and t["title"] == bt["title"]), None)
+            key = bt["key"]
+            matches = [t for t in all_rows if t["source"] == "builtin"
+                       and (t.get("jira_key") == key or t.get("title") == bt["title"])]
+            # Deduplicate: keep lowest id, mark rest done
+            for dup in sorted(matches, key=lambda t: t["id"])[1:]:
+                update_task(DB_PATH, dup["id"], status="done")
+            match = matches[0] if matches else None
             if match is None:
                 add_task(DB_PATH, source="builtin", title=bt["title"],
                          description=bt["description"], cwd=bt["cwd"],
-                         horizon=bt["horizon"], priority=bt["priority"])
-            elif match["status"] == "done":
-                update_task(DB_PATH, match["id"], status="open")
+                         horizon=bt["horizon"], priority=bt["priority"],
+                         jira_key=key)
+            else:
+                # Backfill key and reopen if closed
+                updates = {}
+                if not match.get("jira_key"):
+                    updates["jira_key"] = key
+                if match["status"] == "done":
+                    updates["status"] = "open"
+                if updates:
+                    update_task(DB_PATH, match["id"], **updates)
         for rt in self._scheduler.load_tasks():
             match = next((t for t in all_rows
                           if t["title"] == rt.label or t["source"] == rt.name), None)
