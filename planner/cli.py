@@ -12,24 +12,24 @@ Usage: planner.cli <command> [options]
 
 Commands:
   add <title> [--today|--week|--backlog] [--priority 1-5]
-      Add a new task.
+      Add a new session.
 
   list [-v|--verbose]
-      List all open tasks with id, source, title, horizon, and priority.
+      List all open sessions with id, source, title, horizon, and priority.
       -v / --verbose also shows description, cwd, and session name.
 
   get <id>
-      Print full structured JSON for a single task by id.
+      Print full structured JSON for a single session by id.
 
   update <id> [options]
-      Update an existing task by id (from `list`).
+      Update an existing session by id (from `list`).
       --today | --week | --backlog   Change horizon
       --priority N                   Change priority (1=urgent, 5=low)
-      --title "..."                  Rename the task
+      --title "..."                  Rename the session
       --desc "..."                   Set the description/prompt
 
   export
-      Write recurring task schedule fields from DB back to tasks.json.
+      Write recurring session schedule fields from DB back to sessions.json.
 
   inbox add <title|json> [--today|--week|--backlog] [--desc "..."]
       Queue a task to ~/.planner/inbox.json (picked up on next planner launch).
@@ -74,14 +74,14 @@ def main(argv: list[str] | None = None) -> int:
                     pass
             i += 1
         task_id = add_task(DB_PATH, source="freeform", title=title, horizon=horizon, priority=priority)
-        print(f"Added task #{task_id}: {title} [{horizon}]")
+        print(f"Added session #{task_id}: {title} [{horizon}]")
         return 0
 
     elif command == "list":
         verbose = "-v" in rest or "--verbose" in rest
         tasks = list_tasks(DB_PATH)
         if not tasks:
-            print("No tasks.")
+            print("No sessions.")
             return 0
         for t in tasks:
             tag = f"[{t['jira_key']}]" if t.get("jira_key") else f"[{t['source']}]"

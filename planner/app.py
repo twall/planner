@@ -43,9 +43,9 @@ _BUILTIN_TASKS = [
     },
     {
         "source": "builtin",
-        "title": "Organize Tasks",
+        "title": "Organize Sessions",
         "description": (
-            "Review all current planner tasks. "
+            "Review all current planner sessions. "
             "Reclassify horizons (today/this_week/backlog), adjust priorities (1=urgent, 5=low), "
             "and rename titles for clarity. "
             "Use the /planner-organize skill to propose and apply changes interactively."
@@ -105,16 +105,16 @@ def _ingest_inbox(db_path: Path) -> int:
 
 
 KEYMAP_TEXT = """\
- ↑ / ↓    Move task cursor (also J / K)
- enter    Attach to session (content pane) / edit task (task pane)
- ctrl+s   Start session for selected task (task pane)
+ ↑ / ↓    Move session cursor (also J / K)
+ enter    Attach to session (content pane) / edit session (edit pane)
+ ctrl+s   Start session for selected item (edit pane)
 
  c        Right pane: Content / session output
- t        Right pane: Task / edit metadata
- n        New task
- d        Delete task (and kill session if any)
- D        Toggle show completed disposable tasks
- m        Move task horizon (today → this week)
+ t        Right pane: Edit metadata
+ n        New session
+ d        Delete session (and kill session if any)
+ D        Toggle show completed disposable sessions
+ m        Move session horizon (today → this week)
  j        Sync JIRA
  b        Re-run PR review
  s        Re-run Slack digest
@@ -198,8 +198,8 @@ class AddTaskModal(ModalScreen[str | None]):
 
     def compose(self) -> ComposeResult:
         with Static(id="add-task-box"):
-            yield Label("[bold]New Task[/bold]  [dim](esc to cancel · /task also works in any Claude session)[/dim]")
-            yield Input(placeholder="Task title…", id="task-title-input")
+            yield Label("[bold]New Session[/bold]  [dim](esc to cancel · /task also works in any Claude session)[/dim]")
+            yield Input(placeholder="Session title…", id="task-title-input")
 
     def on_mount(self) -> None:
         self.query_one("#task-title-input", Input).focus()
@@ -324,7 +324,7 @@ class ConfirmDeleteModal(ModalScreen[bool]):
 
     def compose(self) -> ComposeResult:
         with Static(id="confirm-box"):
-            yield Label(f"[bold red]Kill session and delete task?[/bold red]\n\n{self._title}")
+            yield Label(f"[bold red]Kill session and delete?[/bold red]\n\n{self._title}")
             with Horizontal(id="confirm-buttons"):
                 yield Button("Yes, delete (y)", id="btn-yes", variant="error")
                 yield Button("Cancel (esc)", id="btn-cancel")
@@ -460,7 +460,7 @@ class PlannerApp(App):
         action_descriptions = {
             "attach_session": ("Attach", True),
 
-            "new_task": ("New task", True),
+            "new_task": ("New session", True),
             "mark_done": ("Delete", True),
             "move_horizon": ("Move horizon", True),
             "sync_jira": ("Sync JIRA", True),
@@ -490,7 +490,7 @@ class PlannerApp(App):
         _install_skills()
         ingested = _ingest_inbox(DB_PATH)
         if ingested:
-            self.call_after_refresh(self.notify, f"Imported {ingested} task(s) from inbox")
+            self.call_after_refresh(self.notify, f"Imported {ingested} session(s) from inbox")
         self.run_worker(self._check_for_update, thread=True, name="update-check")
         # Ensure each recurring task config has an open DB task entry (restore if done)
         from planner.db import _conn
@@ -625,7 +625,7 @@ class PlannerApp(App):
     def _run_named_task(self, name: str, label: str) -> None:
         task = next((t for t in self._scheduler.load_tasks() if t.name == name), None)
         if task is None:
-            self.notify(f"Task '{name}' not found in tasks.json", severity="warning")
+            self.notify(f"Recurring session '{name}' not found in sessions.json", severity="warning")
             return
         self.run_worker(lambda: self._scheduler.run_task(task), thread=True)
         self.notify(f"Running {label}...")
@@ -638,7 +638,7 @@ class PlannerApp(App):
 
     def action_run_all(self) -> None:
         self.run_worker(self._scheduler.run_all_due, thread=True)
-        self.notify("Running all recurring tasks...")
+        self.notify("Running all recurring sessions...")
 
     def action_attach_session(self) -> None:
         self._handle_enter()
@@ -913,11 +913,13 @@ class PlannerApp(App):
         if right._mode == "content":
             task = self.query_one(TaskPanel)._selected_task()
             if task:
+                # jira tasks are externally managed — no local session to start
+                launchable = task.get("source") != "jira"
                 if task.get("screen_session"):
                     live_session = self._get_session_for_task(task)
                     if not live_session:
                         # Dead session — resume or start fresh
-                        if task.get("source") not in TaskPanel.LOCKED_SOURCES:
+                        if launchable:
                             self._prompt_start_session(task)
                     else:
                         from planner.backends import get_backend
@@ -925,7 +927,7 @@ class PlannerApp(App):
                         self._snapshot()
                         self._monitor.stop()
                         self.exit(result=backend.attach_cmd(task["screen_session"]))
-                elif task.get("source") not in TaskPanel.LOCKED_SOURCES:
+                elif launchable:
                     self._prompt_start_session(task)
         elif right._mode == "task":
             ep = right.query_one(TaskEditPane)

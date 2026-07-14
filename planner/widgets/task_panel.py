@@ -227,7 +227,7 @@ class TaskPanel(Widget):
         if not t:
             return
         if t.get("source") in self.LOCKED_SOURCES:
-            self.notify(f"Built-in task '{t['title']}' cannot be deleted.", severity="warning")
+            self.notify(f"Built-in session '{t['title']}' cannot be deleted.", severity="warning")
             return
         # If a live session exists, ask the app to confirm before killing
         if t.get("screen_session"):

@@ -33,7 +33,7 @@ class ContentPane(Widget):
 
     def compose(self) -> ComposeResult:
         with Vertical():
-            yield Static("[dim]No task selected.[/dim]", id="session-output")
+            yield Static("[dim]No session selected.[/dim]", id="session-output")
             yield Static("", id="session-hint")
 
     def show(self, task: dict | None, session: SessionState | None) -> None:
@@ -91,4 +91,4 @@ class ContentPane(Widget):
                 t.append("\n\n")
                 t.append("No description.", style="dim")
             out.update(t)
-            hint.update("[dim]→: task pane  ·  enter: run now  ·  ctrl+s: start session[/dim]")
+            hint.update("[dim]→: edit pane  ·  enter: run now  ·  ctrl+s: start session[/dim]")

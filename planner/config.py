@@ -3,7 +3,7 @@ from pathlib import Path
 
 PLANNER_ROOT = Path(os.environ.get("PLANNER_INSTALL_DIR", Path.home() / "planner"))
 DB_PATH = PLANNER_ROOT / "data" / "tasks.db"
-TASKS_CONFIG_PATH = PLANNER_ROOT / "tasks.json"
+TASKS_CONFIG_PATH = PLANNER_ROOT / "sessions.json"
 SETTINGS_PATH = PLANNER_ROOT / "settings.json"
 
 STATE_PATH = Path.home() / ".planner" / "state.json"

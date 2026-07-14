@@ -78,11 +78,11 @@ class TaskEditPane(Widget):
         self._has_live_session = False
 
     def compose(self) -> ComposeResult:
-        yield Static("[dim]No task selected.[/dim]", id="edit-placeholder")
+        yield Static("[dim]No session selected.[/dim]", id="edit-placeholder")
         with Vertical(id="edit-form"):
             yield Static("", id="edit-hint")
             yield Label("Title")
-            yield Input(placeholder="Task title", id="edit-title")
+            yield Input(placeholder="Session title", id="edit-title")
             yield Label("Description / Prompt")
             yield TextArea("", id="edit-desc", soft_wrap=True)
             yield Label("Working Directory")

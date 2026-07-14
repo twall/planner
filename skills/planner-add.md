@@ -1,11 +1,11 @@
 ---
 name: planner-add
-description: Add one or more tasks to the planner inbox. Use when user says "/planner-add", "add to planner", "make planner tasks for these", "create planner tasks", or when you have a list of action items that should become planner tasks. Tasks are picked up next time the planner launches or restarts.
+description: Add one or more sessions to the planner inbox. Use when user says "/planner-add", "add to planner", "make planner sessions for these", "create planner sessions", or when you have a list of action items that should become planner sessions. Sessions are picked up next time the planner launches or restarts.
 ---
 
-# /planner-add — Add Tasks to Planner
+# /planner-add — Add Sessions to Planner
 
-Queue one or more tasks for the planner. Tasks appear when the planner next starts (or restarts after a session detach).
+Queue one or more sessions for the planner. Sessions appear when the planner next starts (or restarts after a session detach).
 
 ## Implementation
 
@@ -20,7 +20,7 @@ Default horizon is `--week` if not specified.
 
 ## Title and description format
 
-When a task references a Sentry or JIRA issue:
+When a session references a Sentry or JIRA issue:
 
 **Title** — prefix with the issue ID:
 - Sentry: `WEBAPP-JR: Fix null pointer in auth middleware`
@@ -51,7 +51,7 @@ If you don't have the URL, use just the key — claude can look it up via MCP to
 
 ## Examples
 
-User: "make planner tasks for these sentry issues"
+User: "make planner sessions for these sentry issues"
 → For each item in the list:
 ```bash
 PLANNER_DIR="${PLANNER_INSTALL_DIR:-$HOME/planner}"
@@ -73,11 +73,11 @@ python -m planner.cli inbox add "Review imap PR" --week
 
 ## Output
 
-After adding all tasks, confirm:
+After adding all sessions, confirm:
 ```
-Queued N tasks for planner:
+Queued N sessions for planner:
   • Fix null pointer in auth middleware [this_week]
   • Review rate limiting gaps [this_week]
 ```
 
-Tasks will appear in the planner the next time it launches.
+Sessions will appear in the planner the next time it launches.

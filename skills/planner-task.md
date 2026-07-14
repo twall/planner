@@ -1,11 +1,11 @@
 ---
 name: planner-task
-description: Add, list, or update tasks in the planner dashboard from any Claude Code session. Use when user says "/planner-task add ...", "/task add ...", "add a task", "remember to...", "update task", "change priority", or asks to see current tasks.
+description: Add, list, or update sessions in the planner dashboard from any Claude Code session. Use when user says "/planner-task add ...", "/task add ...", "add a session", "remember to...", "update session", "change priority", or asks to see current sessions.
 ---
 
-# /planner-task — Planner Task Management
+# /planner-task — Planner Session Management
 
-Add, list, or update tasks in the planner dashboard. Alias: `/task`.
+Add, list, or update sessions in the planner dashboard. Alias: `/task`.
 
 ## Usage
 
@@ -35,7 +35,7 @@ python -m planner.cli list           # compact: id, title, horizon, priority
 python -m planner.cli list --verbose # also shows description, cwd, session
 ```
 
-Get full task details as JSON:
+Get full session details as JSON:
 ```bash
 python -m planner.cli get <id>
 ```
@@ -47,16 +47,16 @@ python -m planner.cli update <id> [--today|--week|--backlog] [--priority N] [--t
 
 ## When to use update
 
-- User asks to reprioritize a task → `--priority N`
-- User asks to move a task to a different horizon → `--today`, `--week`, or `--backlog`
-- User asks to rename a task → `--title "new title"`
+- User asks to reprioritize a session → `--priority N`
+- User asks to move a session to a different horizon → `--today`, `--week`, or `--backlog`
+- User asks to rename a session → `--title "new title"`
 - User asks to set or change the description/prompt → `--desc "..."`
 
-Always `list` first to get the task id before updating.
+Always `list` first to get the session id before updating.
 
 ## Title and description format
 
-When a task references a Sentry or JIRA issue:
+When a session references a Sentry or JIRA issue:
 
 **Title** — prefix with the issue ID:
 - Sentry: `WEBAPP-JR: Fix null pointer in auth middleware`
@@ -87,7 +87,7 @@ If you don't have the URL, use just the key — claude can look it up via MCP to
 
 ## Examples
 
-User: "add a task to review the imap performance"
+User: "add a session to review the imap performance"
 → `python -m planner.cli add "Review imap graph performance" --week --priority 3`
 
 User: "remind me to check the sentry alerts today"
@@ -99,12 +99,12 @@ User: "what's on my list?"
 User: "move the imap review to today and make it priority 1"
 → list first, then `python -m planner.cli update <id> --today --priority 1`
 
-User: "set the description for task 7 to 'run the benchmark suite'"
+User: "set the description for session 7 to 'run the benchmark suite'"
 → `python -m planner.cli update 7 --desc "run the benchmark suite"`
 
-## Recurring / Scheduled Tasks
+## Recurring / Scheduled Sessions
 
-Tasks with `rt_frequency` set are scheduled tasks. Key fields (visible via `get <id>`):
+Sessions with `rt_frequency` set are scheduled. Key fields (visible via `get <id>`):
 - `rt_frequency`: `"daily"` | `"weekly"` | `"interval"`
 - `rt_time`: earliest wall-clock time to run (e.g. `"08:00"`)
 - `rt_days`: comma-separated weekdays (e.g. `"mon,tue,wed,thu,fri"`)
@@ -112,11 +112,11 @@ Tasks with `rt_frequency` set are scheduled tasks. Key fields (visible via `get 
 
 Sources that support recurring: `slack`, `git`, `sentry`. The `source` field identifies type.
 
-### How the scheduler runs a task (`scheduler.py` → `session_manager.py`)
+### How the scheduler runs a session (`scheduler.py` → `session_manager.py`)
 
 `Scheduler.run_task()` calls `run_recurring_via_session()`:
 
-1. If a live screen/tmux session exists for the task and Claude is idle (polls for `>` or `❯`):
+1. If a live screen/tmux session exists for the session and Claude is idle (polls for `>` or `❯`):
    - Sends `\033` (Escape) via `send_raw` to abort buffered input without submitting, then `/clear` via `send_input`
    - Sleeps 1.5s after `/clear` so SessionStart hooks finish rendering before polling for idle
    - Waits for Claude idle again, then sends the prompt
@@ -124,7 +124,7 @@ Sources that support recurring: `slack`, `git`, `sentry`. The `source` field ide
 
 ### Known bug: `/clear` + prompt race condition
 
-**Symptom**: Scheduled task appears to run — `/clear` fires and prompt text is injected — but the task description is treated as user-typed text rather than executed (skill invocations don't fire, or text lands mid-render).
+**Symptom**: Scheduled session appears to run — `/clear` fires and prompt text is injected — but the description is treated as user-typed text rather than executed (skill invocations don't fire, or text lands mid-render).
 
 **Root cause**: `_wait_for_claude_ready` polls for `>` or `❯` in the screen capture. After `/clear`, any active `SessionStart` hook (e.g. caveman mode) immediately outputs text containing `>` or `❯`, causing the poller to return too early. The prompt is then sent while Claude is still rendering the `/clear` output.
 

@@ -1,9 +1,9 @@
 ---
 name: task
-description: Shortcut alias for /planner-task. Add or list planner tasks. Use when user says "/task add ...", "add a task", "remember to...", or asks to see current tasks.
+description: Shortcut alias for /planner-task. Add or list planner sessions. Use when user says "/task add ...", "add a session", "remember to...", or asks to see current sessions.
 ---
 
-# /task — Planner Task Management (alias)
+# /task — Planner Session Management (alias)
 
 This is an alias for `/planner-task`. See that skill for full documentation.
 

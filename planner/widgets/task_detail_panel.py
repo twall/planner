@@ -45,7 +45,7 @@ class RightPane(Widget):
         self._update_tabs()
 
     def _update_tabs(self) -> None:
-        items = [("content", "Content [c]"), ("task", "Task/Edit [t]")]
+        items = [("content", "Content [c]"), ("task", "Edit [t]")]
         parts = []
         for key, label in items:
             if key == self._mode:
