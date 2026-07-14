@@ -70,6 +70,7 @@ class TaskPanel(Widget):
         for s in sessions:
             self._session_states[s.name] = s
             self._session_states[s.full_name] = s
+        self._tasks = self._sort_tasks(self._tasks)
         self._render_tasks()
 
     def _cursor_idx(self) -> int:
@@ -87,15 +88,38 @@ class TaskPanel(Widget):
         self.border_title = "Horizon  [dim](showing done)[/dim]" if self._show_done else "Horizon"
         self.refresh_tasks()
 
+    def _status_rank(self, t: dict) -> int:
+        """Sort key within a group: awaiting input, working, idle, no session, done."""
+        sess = self._session_states.get(t.get("screen_session", ""))
+        if sess:
+            if sess.state in ("NEEDS INPUT", "NEEDS PERMISSION"):
+                return 0
+            if sess.state == "ACTIVE":
+                return 1
+            return 2  # IDLE, ATTACHED, etc.
+        if t.get("status") == "done":
+            return 4
+        return 3  # no session, open
+
+    def _sort_tasks(self, tasks: list[dict]) -> list[dict]:
+        """Re-sort tasks: by horizon, then status rank within horizon, then priority."""
+        return sorted(tasks, key=lambda t: (
+            1 if t["source"] == "builtin" else 0,
+            {"today": 0, "this_week": 1}.get(t["horizon"], 2),
+            self._status_rank(t),
+            t["priority"],
+        ))
+
     def refresh_tasks(self) -> None:
         prev_ids = [t["id"] for t in self._tasks]
         all_tasks = list_tasks(self._db_path)
         if self._show_done:
             # Show done disposable tasks alongside open ones
-            self._tasks = [t for t in all_tasks
-                           if t["status"] != "done" or t.get("disposable")]
+            filtered = [t for t in all_tasks
+                        if t["status"] != "done" or t.get("disposable")]
         else:
-            self._tasks = [t for t in all_tasks if t["status"] != "done"]
+            filtered = [t for t in all_tasks if t["status"] != "done"]
+        self._tasks = self._sort_tasks(filtered)
         task_ids = {t["id"] for t in self._tasks}
         if not self._tasks:
             self._selected_id = None
