@@ -762,9 +762,11 @@ class PlannerApp(App):
         def _on_title(title: str | None) -> None:
             if not title:
                 return
-            add_task(DB_PATH, source="freeform", title=title,
-                     horizon=self._settings.default_task_horizon, priority=3)
-            self.query_one(TaskPanel).refresh_tasks()
+            task_id = add_task(DB_PATH, source="freeform", title=title,
+                               horizon=self._settings.default_task_horizon, priority=3)
+            panel = self.query_one(TaskPanel)
+            panel.refresh_tasks()
+            panel.select_by_id(task_id)
             self.notify(f"Added: {title}")
 
         self.push_screen(AddTaskModal(), _on_title)
