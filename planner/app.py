@@ -888,6 +888,10 @@ class PlannerApp(App):
             if cwd is None:
                 return
             cwd = str(Path(cwd).expanduser()) if cwd else None
+            from planner.db import update_task
+            if task.get("horizon") != "today":
+                update_task(DB_PATH, task["id"], horizon="today")
+                task["horizon"] = "today"
             from planner.session_manager import launch_session, resume_session
             from planner.backends import get_backend
 
