@@ -564,10 +564,13 @@ class PlannerApp(App):
     def _get_session_for_task(self, task: dict):
         if not task or not task.get("screen_session"):
             return None
+        from planner.session_manager import _bare_name
+        stored = task["screen_session"]
+        stored_bare = _bare_name(stored)
         sessions = self._monitor.get_sessions()
         return next(
-            (s for s in sessions if s.name == task["screen_session"]
-             or s.full_name == task["screen_session"]), None
+            (s for s in sessions if s.name == stored
+             or s.full_name == stored or s.name == stored_bare), None
         )
 
     def _refresh_sessions(self) -> None:
@@ -575,10 +578,12 @@ class PlannerApp(App):
         self.query_one(TaskPanel).update_sessions(sessions)
         selected = self.query_one(TaskPanel)._selected_task()
         if selected:
+            from planner.session_manager import _bare_name
+            ss = selected.get("screen_session")
             session = next(
-                (s for s in sessions if s.name == selected.get("screen_session")
-                 or s.full_name == selected.get("screen_session")), None
-            ) if selected.get("screen_session") else None
+                (s for s in sessions if s.name == ss or s.full_name == ss
+                 or s.name == _bare_name(ss)), None
+            ) if ss else None
             self.query_one(RightPane).set_task(selected, session)
 
     def _run_update_check(self) -> None:

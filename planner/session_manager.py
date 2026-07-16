@@ -108,6 +108,13 @@ def _resolve_full_name(backend, name: str) -> str | None:
     return None
 
 
+def _bare_name(screen_session: str) -> str:
+    """Strip PID prefix from screen full_name (e.g. '1234.foo' → 'foo'). Idempotent."""
+    if "." in screen_session:
+        return screen_session.split(".", 1)[1]
+    return screen_session
+
+
 def resume_sessions(db_path: Path) -> int:
     """Recreate sessions for tasks with claude_session_id but no live session."""
     backend = get_backend()
@@ -119,9 +126,10 @@ def resume_sessions(db_path: Path) -> int:
     for t in tasks:
         if not t.get("claude_session_id"):
             continue
-        name = session_name_for(t["id"])
+        name = session_name_for(t["id"], t.get("title"))
         stored = t.get("screen_session") or ""
-        if name in live_names or stored in live_names or stored in live_full_names:
+        stored_bare = _bare_name(stored) if stored else ""
+        if name in live_names or stored in live_names or stored in live_full_names or stored_bare in live_names:
             continue
         shell_cmd = f"exec claude --resume {t['claude_session_id']}"
         raw = t.get("cwd") or None
