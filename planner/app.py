@@ -408,6 +408,7 @@ class PlannerApp(App):
         self._scheduler = Scheduler(DB_PATH)
         self._jira_client: JiraClient | None = self._make_jira_client()
         self._apply_theme(self._settings.theme)
+        self._last_selected_id: int | None = None
 
     def _apply_theme(self, theme: str) -> None:
         if theme == "auto":
@@ -689,6 +690,8 @@ class PlannerApp(App):
 
     def on_task_panel_task_selected(self, event: TaskPanel.TaskSelected) -> None:
         task = event.task
+        if task:
+            self._last_selected_id = task["id"]
         session = self._get_session_for_task(task)
         self.query_one(RightPane).set_task(task, session)
 
@@ -930,8 +933,12 @@ class PlannerApp(App):
         self.exit()
 
     def _snapshot(self) -> None:
-        task = self.query_one(TaskPanel)._selected_task()
-        save_state(task["id"] if task else None)
+        try:
+            task = self.query_one(TaskPanel)._selected_task()
+            selected_id = task["id"] if task else self._last_selected_id
+        except Exception:
+            selected_id = self._last_selected_id
+        save_state(selected_id)
 
     def _handle_enter(self) -> None:
         from planner.scheduler import RECURRING_SOURCES
