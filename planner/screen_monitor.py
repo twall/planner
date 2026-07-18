@@ -65,7 +65,7 @@ def parse_screen_ls(output: str) -> list[dict]:
              "attached": s.attached} for s in sessions]
 
 
-IDLE_SKIP_CYCLES = 5  # after confirmed idle, skip this many poll cycles before re-capturing
+IDLE_SKIP_CYCLES = 5  # skip this many poll cycles after N consecutive idle polls
 
 
 class ScreenMonitor:
@@ -78,6 +78,7 @@ class ScreenMonitor:
         self._snapshots: dict[str, tuple[list[str], float]] = {}
         self._skip_until: dict[str, float] = {}  # full_name -> monotonic time to resume capturing
         self._active_until: dict[str, float] = {}  # full_name -> monotonic time to force ACTIVE after detach
+        self._idle_count: dict[str, int] = {}  # full_name -> consecutive IDLE poll count
         self._thread: threading.Thread | None = None
         self._running = False
         # Backend resolved once; respects PLANNER_SESSION_BACKEND env var
@@ -176,13 +177,20 @@ class ScreenMonitor:
             prev_state = prev_states.get(s.full_name, "")
             state = detect_state(lines, idle_secs, s.attached, self._idle_threshold, prev_state)
 
-            # Schedule long-idle detached sessions to be skipped for several poll cycles
+            # Only skip capturing after IDLE_SKIP_CYCLES consecutive idle polls.
+            # This prevents missing a permission prompt that arrives shortly after
+            # a session goes idle — a single idle poll is not enough to skip.
             if state == "IDLE" and not s.attached:
-                skip_duration = self._poll_interval * IDLE_SKIP_CYCLES
-                self._skip_until[s.full_name] = now + skip_duration
+                count = self._idle_count.get(s.full_name, 0) + 1
+                self._idle_count[s.full_name] = count
+                if count >= IDLE_SKIP_CYCLES:
+                    skip_duration = self._poll_interval * IDLE_SKIP_CYCLES
+                    self._skip_until[s.full_name] = now + skip_duration
                 self._active_until.pop(s.full_name, None)
-            elif s.full_name in self._skip_until:
-                del self._skip_until[s.full_name]
+            else:
+                self._idle_count.pop(s.full_name, None)
+                if s.full_name in self._skip_until:
+                    del self._skip_until[s.full_name]
 
             # Use name as pid for tmux (no pid prefix); screen keeps real pid
             updated.append(SessionState(
