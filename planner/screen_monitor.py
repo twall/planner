@@ -65,7 +65,7 @@ def parse_screen_ls(output: str) -> list[dict]:
              "attached": s.attached} for s in sessions]
 
 
-IDLE_SKIP_MULTIPLIER = 4  # skip capture after idle_threshold * this many seconds
+IDLE_SKIP_CYCLES = 5  # after confirmed idle, skip this many poll cycles before re-capturing
 
 
 class ScreenMonitor:
@@ -77,6 +77,7 @@ class ScreenMonitor:
         self._lock = threading.Lock()
         self._snapshots: dict[str, tuple[list[str], float]] = {}
         self._skip_until: dict[str, float] = {}  # full_name -> monotonic time to resume capturing
+        self._active_until: dict[str, float] = {}  # full_name -> monotonic time to force ACTIVE after detach
         self._thread: threading.Thread | None = None
         self._running = False
         # Backend resolved once; respects PLANNER_SESSION_BACKEND env var
@@ -113,11 +114,15 @@ class ScreenMonitor:
 
         # Skip capturing sessions that have been confirmed idle for a long time.
         # Attached sessions always get captured (state may change on detach).
-        # Also capture sessions that just detached — content may reflect new activity
+        # Also capture sessions that just detached — content may reflect new activity.
+        # Never skip sessions waiting for input/permission — they must be re-captured each
+        # cycle so we detect when the prompt is answered and the state changes.
+        needs_response = {"NEEDS PERMISSION", "NEEDS INPUT"}
         just_detached = {s.full_name for s in raw
                          if not s.attached and prev_attached.get(s.full_name, False)}
         to_capture = [s for s in raw
                       if s.attached or s.full_name in just_detached
+                      or prev_states.get(s.full_name, "") in needs_response
                       or now >= self._skip_until.get(s.full_name, 0)]
 
         # Capture eligible sessions in parallel — sequential screen hardcopy is ~400ms each
@@ -143,17 +148,24 @@ class ScreenMonitor:
                     self._snapshots[s.full_name] = (lines, backdated)
                     idle_secs = float(self._idle_threshold)
                 elif s.full_name in just_detached:
-                    # Treat detach as a fresh activity moment so state evaluates ACTIVE
+                    # Grace window: force ACTIVE for idle_threshold seconds after detach.
+                    # Work done while attached doesn't change the captured buffer, so
+                    # content equality isn't a reliable idle signal immediately post-detach.
                     idle_secs = 0.0
                     self._snapshots[s.full_name] = (lines, now)
                     self._skip_until.pop(s.full_name, None)
+                    self._active_until[s.full_name] = now + self._idle_threshold
                 elif lines == prev_lines:
                     idle_secs = now - prev_time
+                    # Clamp to 0 while inside the post-detach grace window
+                    if now < self._active_until.get(s.full_name, 0):
+                        idle_secs = 0.0
                 else:
                     idle_secs = 0.0
                     self._snapshots[s.full_name] = (lines, now)
                     # New content — clear any skip so we capture next poll too
                     self._skip_until.pop(s.full_name, None)
+                    self._active_until.pop(s.full_name, None)
             else:
                 # Skipped — reuse previous state
                 prev = prev_map.get(s.full_name)
@@ -166,8 +178,9 @@ class ScreenMonitor:
 
             # Schedule long-idle detached sessions to be skipped for several poll cycles
             if state == "IDLE" and not s.attached:
-                skip_duration = self._idle_threshold * IDLE_SKIP_MULTIPLIER
+                skip_duration = self._poll_interval * IDLE_SKIP_CYCLES
                 self._skip_until[s.full_name] = now + skip_duration
+                self._active_until.pop(s.full_name, None)
             elif s.full_name in self._skip_until:
                 del self._skip_until[s.full_name]
 
