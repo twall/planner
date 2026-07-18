@@ -68,6 +68,24 @@ def _purge_stale_planner_session_tasks(db_path: Path) -> None:
             update_task(db_path, t["id"], status="done")
 
 
+def _kill_stale_planner_screens() -> None:
+    """Kill detached planner-N screen sessions left over from previous runs."""
+    import re
+    import os
+    from planner.backends import get_backend
+    # Avoid killing the screen session we're currently running inside (if any)
+    current_sty = os.environ.get("STY", "")  # screen sets STY=pid.name
+    current_name = current_sty.split(".", 1)[1] if "." in current_sty else current_sty
+    try:
+        backend = get_backend()
+        for s in backend.list_sessions():
+            if re.fullmatch(r"planner-\d+", s.name) and not s.attached:
+                if s.name != current_name and s.full_name != current_sty:
+                    backend.kill(s.full_name)
+    except Exception:
+        pass
+
+
 def _install_skills() -> None:
     """Symlink planner skills into ~/.claude/commands/ on first run."""
     _COMMANDS_DIR.mkdir(parents=True, exist_ok=True)
@@ -532,6 +550,7 @@ class PlannerApp(App):
         import_tasks_to_db(DB_PATH)
         import_orphan_sessions(DB_PATH)
         _purge_stale_planner_session_tasks(DB_PATH)
+        _kill_stale_planner_screens()
         resume_sessions(DB_PATH)
         # Eager poll so session states are populated before first render
         self._monitor._poll()

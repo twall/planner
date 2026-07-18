@@ -1,6 +1,7 @@
 import re
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from planner.config import SCREEN_POLL_INTERVAL, SCREEN_IDLE_THRESHOLD
 
@@ -64,6 +65,9 @@ def parse_screen_ls(output: str) -> list[dict]:
              "attached": s.attached} for s in sessions]
 
 
+IDLE_SKIP_MULTIPLIER = 4  # skip capture after idle_threshold * this many seconds
+
+
 class ScreenMonitor:
     def __init__(self, poll_interval: int = SCREEN_POLL_INTERVAL,
                  idle_threshold: int = SCREEN_IDLE_THRESHOLD):
@@ -72,6 +76,7 @@ class ScreenMonitor:
         self._sessions: list[SessionState] = []
         self._lock = threading.Lock()
         self._snapshots: dict[str, tuple[list[str], float]] = {}
+        self._skip_until: dict[str, float] = {}  # full_name -> monotonic time to resume capturing
         self._thread: threading.Thread | None = None
         self._running = False
         # Backend resolved once; respects PLANNER_SESSION_BACKEND env var
@@ -103,21 +108,69 @@ class ScreenMonitor:
 
         now = time.monotonic()
         prev_states = {s.full_name: s.state for s in self._sessions}
+        prev_map = {s.full_name: s for s in self._sessions}
+        prev_attached = {s.full_name: s.attached for s in self._sessions}
+
+        # Skip capturing sessions that have been confirmed idle for a long time.
+        # Attached sessions always get captured (state may change on detach).
+        # Also capture sessions that just detached — content may reflect new activity
+        just_detached = {s.full_name for s in raw
+                         if not s.attached and prev_attached.get(s.full_name, False)}
+        to_capture = [s for s in raw
+                      if s.attached or s.full_name in just_detached
+                      or now >= self._skip_until.get(s.full_name, 0)]
+
+        # Capture eligible sessions in parallel — sequential screen hardcopy is ~400ms each
+        captures: dict[str, list[str]] = {}
+        if to_capture:
+            workers = min(len(to_capture), 10)
+            with ThreadPoolExecutor(max_workers=workers) as pool:
+                futures = {pool.submit(self._backend.capture, s.full_name): s for s in to_capture}
+                for fut in as_completed(futures):
+                    s = futures[fut]
+                    try:
+                        captures[s.full_name] = fut.result()
+                    except Exception:
+                        captures[s.full_name] = []
+
         updated = []
         for s in raw:
-            lines = self._backend.capture(s.full_name)
-            prev_lines, prev_time = self._snapshots.get(s.full_name, (None, None))
-            if prev_lines is None:
-                backdated = now - self._idle_threshold
-                self._snapshots[s.full_name] = (lines, backdated)
-                idle_secs = float(self._idle_threshold)
-            elif lines == prev_lines:
-                idle_secs = now - prev_time
+            if s.full_name in captures:
+                lines = captures[s.full_name]
+                prev_lines, prev_time = self._snapshots.get(s.full_name, (None, None))
+                if prev_lines is None:
+                    backdated = now - self._idle_threshold
+                    self._snapshots[s.full_name] = (lines, backdated)
+                    idle_secs = float(self._idle_threshold)
+                elif s.full_name in just_detached:
+                    # Treat detach as a fresh activity moment so state evaluates ACTIVE
+                    idle_secs = 0.0
+                    self._snapshots[s.full_name] = (lines, now)
+                    self._skip_until.pop(s.full_name, None)
+                elif lines == prev_lines:
+                    idle_secs = now - prev_time
+                else:
+                    idle_secs = 0.0
+                    self._snapshots[s.full_name] = (lines, now)
+                    # New content — clear any skip so we capture next poll too
+                    self._skip_until.pop(s.full_name, None)
             else:
-                idle_secs = 0.0
-                self._snapshots[s.full_name] = (lines, now)
+                # Skipped — reuse previous state
+                prev = prev_map.get(s.full_name)
+                lines = prev.last_lines if prev else []
+                _, prev_time = self._snapshots.get(s.full_name, (None, now))
+                idle_secs = now - (prev_time or now)
+
             prev_state = prev_states.get(s.full_name, "")
             state = detect_state(lines, idle_secs, s.attached, self._idle_threshold, prev_state)
+
+            # Schedule long-idle detached sessions to be skipped for several poll cycles
+            if state == "IDLE" and not s.attached:
+                skip_duration = self._idle_threshold * IDLE_SKIP_MULTIPLIER
+                self._skip_until[s.full_name] = now + skip_duration
+            elif s.full_name in self._skip_until:
+                del self._skip_until[s.full_name]
+
             # Use name as pid for tmux (no pid prefix); screen keeps real pid
             updated.append(SessionState(
                 pid=s.name, name=s.name, full_name=s.full_name,
