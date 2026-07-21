@@ -221,8 +221,10 @@ class Scheduler:
         tasks = self.load_tasks()
         task = next((t for t in tasks if t.name == task_name), None)
         if task is None:
-            today = datetime.date.today().isoformat()
-            return get_last_run(self._db_path, task_name) != today
+            last = get_last_run(self._db_path, task_name)
+            if last is None:
+                return True
+            return last[:10] != datetime.date.today().isoformat()
         return self.should_run(task)
 
     def _invoke_claude(self, prompt: str, cwd: str | None = None,
