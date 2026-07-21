@@ -48,23 +48,39 @@ def _rename_claude_session(backend, full_name: str, title: str) -> None:
     backend.send_input(full_name, f"/rename {safe_title}")
 
 
-def _send_commands(backend, full_name: str, text: str) -> None:
-    """Send prompt as a single command (newlines would submit early in screen/tmux)."""
+def _send_commands(backend, full_name: str, text: str, auto_submit: bool = True) -> None:
+    """Populate prompt into the input buffer; submit only if auto_submit=True."""
     lines = [l.strip() for l in text.split("\n") if l.strip()]
     prompt = " ".join(lines)
     _wait_for_claude_ready(backend, full_name)
-    backend.send_input(full_name, prompt)
+    if auto_submit:
+        backend.send_input(full_name, prompt)
+    else:
+        backend.send_raw(full_name, prompt)
 
 
 def _wait_for_claude_ready(backend, full_name: str, timeout: float = 15.0) -> bool:
-    """Poll screen capture until claude's idle input prompt is visible. Returns True if ready."""
+    """Poll screen capture until claude's idle input prompt (❯) is visible. Returns True if ready."""
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         lines = backend.capture(full_name)
-        content = "\n".join(lines)
-        if ">" in content or "❯" in content:
-            return True
+        # Match only lines where ❯ or > appears as the prompt char (start of a non-indented line)
+        for line in lines:
+            stripped = line.strip()
+            if stripped.startswith("❯") or (stripped.startswith(">") and not stripped.startswith(">>")):
+                return True
         time.sleep(0.5)
+    return False
+
+
+def _input_buffer_has_text(backend, full_name: str) -> bool:
+    """Return True if the claude input line already has text typed (prompt already populated)."""
+    lines = backend.capture(full_name)
+    for line in reversed(lines):
+        stripped = line.strip()
+        if stripped.startswith("❯") or stripped.startswith(">"):
+            after_prompt = stripped[1:].strip()
+            return bool(after_prompt)
     return False
 
 
@@ -219,23 +235,27 @@ def _relink_by_id(db_path: Path, name: str, full_name: str,
     return True
 
 
-def run_recurring_via_session(db_path: Path, task_dict: dict, prompt: str) -> None:
-    """Run recurring task: reuse live session (/clear + prompt) or launch new."""
+def run_recurring_via_session(db_path: Path, task_dict: dict, prompt: str,
+                              auto_submit: bool = False) -> None:
+    """Populate prompt into a recurring task's session (submit only if auto_submit=True)."""
     backend = get_backend()
     if task_dict.get("screen_session") and task_dict.get("claude_session_id"):
         live = _live_sessions()
         name = task_dict["screen_session"]
         if any(s["name"] == name or s["full_name"] == name for s in live.values()):
             if not _wait_for_claude_ready(backend, name, timeout=2.0):
-                # Session busy (mid-task or waiting for user input) — skip this run
+                # Session busy — skip this run
                 return
-            # Escape aborts any buffered input without submitting it, then /clear resets context
+            if _input_buffer_has_text(backend, name):
+                # Prompt already populated — leave it alone
+                return
+            # Escape aborts any buffered input, then /clear resets context
             backend.send_raw(name, "\033")
             time.sleep(0.1)
             backend.send_input(name, "/clear")
-            # Sleep after /clear so SessionStart hooks finish rendering before we poll for ready
+            # Wait for /clear + SessionStart hooks to finish before populating
             time.sleep(1.5)
-            _send_commands(backend, name, prompt)
+            _send_commands(backend, name, prompt, auto_submit=auto_submit)
             return
     full_name = launch_session(db_path, task_dict, send_prompt=False)
-    _send_commands(backend, full_name, prompt)
+    _send_commands(backend, full_name, prompt, auto_submit=auto_submit)

@@ -683,28 +683,15 @@ class PlannerApp(App):
         self._handle_enter()
 
     def action_rerun_task(self) -> None:
-        """Re-run the selected recurring task: /clear + re-send prompt into its session."""
+        """Re-populate prompt for the selected recurring task (clear + load prompt, no auto-submit)."""
         from planner.scheduler import RECURRING_SOURCES
         task = self.query_one(TaskPanel)._selected_task()
         if not task or task.get("source") not in RECURRING_SOURCES:
             return
-        prompt = task.get("description") or ""
-        if not prompt:
+        rt = next((t for t in self._scheduler.load_tasks() if t.name == task.get("source")), None)
+        if rt is None:
             return
-        live_session = self._get_session_for_task(task)
-        if live_session and live_session.state == "IDLE":
-            import time as _time
-            from planner.backends import get_backend
-            backend = get_backend()
-            backend.send_input(task["screen_session"], "/clear")
-            _time.sleep(0.5)
-            backend.send_input(task["screen_session"], prompt)
-            self._snapshot()
-            self._monitor.stop()
-            self.exit(result=backend.attach_cmd(task["screen_session"]))
-        else:
-            # No live session or not idle — start/resume normally
-            self._prompt_start_session(task)
+        self._run_named_task(task["source"], task.get("title") or task["source"])
 
     def on_task_panel_task_selected(self, event: TaskPanel.TaskSelected) -> None:
         task = event.task
@@ -768,8 +755,11 @@ class PlannerApp(App):
         task = self.query_one(TaskPanel)._selected_task()
         if not task or not task.get("screen_session"):
             return
+        sess = self._get_session_for_task(task)
+        if not sess:
+            return
         from planner.session_manager import send_input
-        send_input(task["screen_session"], "\r")
+        send_input(sess.full_name, "\r")
 
     def action_mark_done(self) -> None:
         self.query_one(TaskPanel).action_mark_done()
@@ -855,7 +845,7 @@ class PlannerApp(App):
             sess = self._get_session_for_task(task)
             if sess and sess.state == "NEEDS PERMISSION":
                 from planner.session_manager import send_input
-                send_input(task["screen_session"], event.key + "\r")
+                send_input(sess.full_name, event.key + "\r")
                 event.stop()
 
     def key_enter(self, event) -> None:
@@ -971,7 +961,7 @@ class PlannerApp(App):
                         backend = get_backend()
                         self._snapshot()
                         self._monitor.stop()
-                        self.exit(result=backend.attach_cmd(task["screen_session"]))
+                        self.exit(result=backend.attach_cmd(live_session.full_name))
                 elif launchable:
                     self._prompt_start_session(task)
         elif right._mode == "task":

@@ -32,6 +32,7 @@ class RecurringTask:
     day: Optional[str] = None         # for frequency="weekly": which weekday
     interval_hours: Optional[float] = None    # for frequency="interval"
     cwd: Optional[str] = None         # working directory for claude invocation
+    auto_submit: bool = False         # submit prompt automatically (vs. populate only)
 
 
 def load_tasks(config_path: Path = TASKS_CONFIG_PATH) -> list[RecurringTask]:
@@ -53,6 +54,7 @@ def load_tasks(config_path: Path = TASKS_CONFIG_PATH) -> list[RecurringTask]:
             day=item.get("day"),
             interval_hours=item.get("interval_hours"),
             cwd=str(Path(raw_cwd).expanduser()) if raw_cwd else None,
+            auto_submit=bool(item.get("auto_submit", False)),
         ))
     return tasks
 
@@ -172,6 +174,7 @@ class Scheduler:
                 day=t.get("rt_day") or base.day,
                 interval_hours=t.get("rt_interval_hours") or base.interval_hours,
                 cwd=str(Path(raw_cwd).expanduser()) if raw_cwd else None,
+                auto_submit=base.auto_submit,
             ))
         return result
 
@@ -243,7 +246,8 @@ class Scheduler:
                     if t["source"] in RECURRING_SOURCES}
         task_dict = db_tasks.get(task.name)
         if task_dict:
-            run_recurring_via_session(self._db_path, task_dict, task.prompt)
+            run_recurring_via_session(self._db_path, task_dict, task.prompt,
+                                      auto_submit=task.auto_submit)
         else:
             self._invoke_claude(task.prompt, cwd=task.cwd)
         set_last_run(self._db_path, task.name, datetime.datetime.now().isoformat())
