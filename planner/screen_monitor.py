@@ -59,10 +59,16 @@ def detect_state(lines: list[str], idle_seconds: float, attached: bool = False,
 
 # Kept for backward compatibility (used in session_manager.py legacy path)
 def parse_screen_ls(output: str) -> list[dict]:
-    from planner.backends.screen import ScreenBackend
-    sessions = ScreenBackend().list_sessions()
-    return [{"pid": s.name, "name": s.name, "full_name": s.full_name,
-             "attached": s.attached} for s in sessions]
+    import re
+    sessions = []
+    for line in output.splitlines():
+        m = re.match(r'\s+(\d+)\.(\S+)\s+\((Attached|Detached)\)', line)
+        if m:
+            pid, name, status = m.group(1), m.group(2), m.group(3)
+            sessions.append({"pid": pid, "name": name,
+                             "full_name": f"{pid}.{name}",
+                             "attached": status == "Attached"})
+    return sessions
 
 
 IDLE_SKIP_CYCLES = 5  # skip this many poll cycles after N consecutive idle polls

@@ -6,7 +6,7 @@ from planner.session_manager import SESSION_NAME_PREFIX, session_name_for, impor
 
 
 def test_session_name_for():
-    assert session_name_for(42) == "planner-42"
+    assert session_name_for(42) == "task-42"
 
 
 def test_db_stores_claude_session_id(tmp_path):

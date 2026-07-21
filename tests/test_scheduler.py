@@ -96,15 +96,14 @@ def test_should_run_weekly(tmp_path):
     assert sched.should_run(task, now=tuesday) is False
 
 
-def test_run_task_writes_to_db(tmp_path):
+def test_run_task_records_last_run(tmp_path):
+    from planner.db import add_task
     db_path = tmp_path / "tasks.db"
     init_db(db_path)
+    add_task(db_path, source="slack", title="Slack Digest", description="check slack")
     sched = Scheduler(db_path)
     task = RecurringTask(name="slack", label="Slack Digest", prompt="check slack")
-    mock_output = "TASKS:\n- Fix auth bug (today, priority 2)\n"
-    with patch.object(sched, "_invoke_claude", return_value=mock_output):
-        result = sched.run_task(task)
-    tasks = list_tasks(db_path, horizon="today")
-    assert len(tasks) == 1
-    assert tasks[0]["source"] == "slack"
-    assert tasks[0]["title"] == "Fix auth bug"
+    with patch("planner.session_manager.run_recurring_via_session") as mock_rr:
+        sched.run_task(task)
+    mock_rr.assert_called_once()
+    assert get_last_run(db_path, "slack") is not None
