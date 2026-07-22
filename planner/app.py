@@ -941,6 +941,8 @@ class PlannerApp(App):
     def _snapshot(self) -> None:
         task = self.query_one(TaskPanel)._selected_task()
         save_state(task["id"] if task else None)
+        from planner.state import save_session_states
+        save_session_states(self._monitor.get_sessions())
 
     def _handle_enter(self) -> None:
         from planner.scheduler import RECURRING_SOURCES

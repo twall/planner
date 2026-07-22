@@ -15,8 +15,9 @@ PROMPT_PATTERNS = [
     re.compile(r'Enter to select\s*[·•].*Esc to cancel', re.IGNORECASE),
 ]
 
-# Claude Code footer patterns
-_CLAUDE_FOOTER_RE = re.compile(r'manual mode|for shortcuts|esc to interrupt', re.IGNORECASE)
+# Claude Code footer: present in all Claude sessions (idle, active, diff review, etc.)
+_CLAUDE_FOOTER_RE = re.compile(r'for agents', re.IGNORECASE)
+# Active turn only — absent when idle, in diff review, or any non-processing state
 _ACTIVE_FOOTER_RE = re.compile(r'esc to interrupt', re.IGNORECASE)
 
 PERMISSION_PATTERNS = [
@@ -92,7 +93,6 @@ def parse_screen_ls(output: str) -> list[dict]:
     return sessions
 
 
-IDLE_SKIP_CYCLES = 5  # skip this many poll cycles after N consecutive idle polls
 
 
 class ScreenMonitor:
@@ -100,17 +100,21 @@ class ScreenMonitor:
                  idle_threshold: int = SCREEN_IDLE_THRESHOLD):
         self._poll_interval = poll_interval
         self._idle_threshold = idle_threshold
-        self._sessions: list[SessionState] = []
         self._lock = threading.Lock()
         self._snapshots: dict[str, tuple[list[str], float]] = {}
-        self._skip_until: dict[str, float] = {}  # full_name -> monotonic time to resume capturing
-        self._active_until: dict[str, float] = {}  # full_name -> monotonic time to force ACTIVE after detach
-        self._idle_count: dict[str, int] = {}  # full_name -> consecutive IDLE poll count
+        self._skip_until: dict[str, float] = {}
         self._thread: threading.Thread | None = None
         self._running = False
-        # Backend resolved once; respects PLANNER_SESSION_BACKEND env var
         from planner.backends import get_backend
         self._backend = get_backend()
+        # Seed display with cached states from previous run; first poll overwrites.
+        from planner.state import load_session_states
+        cached = load_session_states()
+        self._sessions: list[SessionState] = [
+            SessionState(pid=fn, name=fn.split(".", 1)[1] if "." in fn else fn,
+                         full_name=fn, attached=False, state=state)
+            for fn, state in cached.items()
+        ]
 
     def start(self) -> None:
         self._running = True
@@ -140,11 +144,8 @@ class ScreenMonitor:
         prev_map = {s.full_name: s for s in self._sessions}
         prev_attached = {s.full_name: s.attached for s in self._sessions}
 
-        # Skip capturing sessions that have been confirmed idle for a long time.
-        # Attached sessions always get captured (state may change on detach).
-        # Also capture sessions that just detached — content may reflect new activity.
-        # Never skip sessions waiting for input/permission — they must be re-captured each
-        # cycle so we detect when the prompt is answered and the state changes.
+        # Skip capturing sessions confirmed idle for a long time.
+        # Always capture: attached, just-detached, awaiting input/permission.
         needs_response = {"NEEDS PERMISSION", "NEEDS INPUT"}
         just_detached = {s.full_name for s in raw
                          if not s.attached and prev_attached.get(s.full_name, False)}
@@ -170,30 +171,11 @@ class ScreenMonitor:
         for s in raw:
             if s.full_name in captures:
                 lines = captures[s.full_name]
-                prev_lines, prev_time = self._snapshots.get(s.full_name, (None, None))
-                if prev_lines is None:
-                    backdated = now - self._idle_threshold
-                    self._snapshots[s.full_name] = (lines, backdated)
-                    idle_secs = float(self._idle_threshold)
-                elif s.full_name in just_detached:
-                    # Grace window: force ACTIVE for idle_threshold seconds after detach.
-                    # Work done while attached doesn't change the captured buffer, so
-                    # content equality isn't a reliable idle signal immediately post-detach.
-                    idle_secs = 0.0
+                prev_lines, prev_time = self._snapshots.get(s.full_name, (None, now))
+                if lines != prev_lines:
                     self._snapshots[s.full_name] = (lines, now)
                     self._skip_until.pop(s.full_name, None)
-                    self._active_until[s.full_name] = now + self._idle_threshold
-                elif lines == prev_lines:
-                    idle_secs = now - prev_time
-                    # Clamp to 0 while inside the post-detach grace window
-                    if now < self._active_until.get(s.full_name, 0):
-                        idle_secs = 0.0
-                else:
-                    idle_secs = 0.0
-                    self._snapshots[s.full_name] = (lines, now)
-                    # New content — clear any skip so we capture next poll too
-                    self._skip_until.pop(s.full_name, None)
-                    self._active_until.pop(s.full_name, None)
+                idle_secs = now - self._snapshots[s.full_name][1]
             else:
                 # Skipped — reuse previous state
                 prev = prev_map.get(s.full_name)
@@ -207,17 +189,11 @@ class ScreenMonitor:
             # Only skip capturing after IDLE_SKIP_CYCLES consecutive idle polls.
             # This prevents missing a permission prompt that arrives shortly after
             # a session goes idle — a single idle poll is not enough to skip.
+            # Idle sessions won't change spontaneously — skip until attach/detach wakes them.
             if state == "IDLE" and not s.attached:
-                count = self._idle_count.get(s.full_name, 0) + 1
-                self._idle_count[s.full_name] = count
-                if count >= IDLE_SKIP_CYCLES:
-                    skip_duration = self._poll_interval * IDLE_SKIP_CYCLES
-                    self._skip_until[s.full_name] = now + skip_duration
-                self._active_until.pop(s.full_name, None)
-            else:
-                self._idle_count.pop(s.full_name, None)
-                if s.full_name in self._skip_until:
-                    del self._skip_until[s.full_name]
+                self._skip_until[s.full_name] = float("inf")
+            elif s.full_name in self._skip_until:
+                del self._skip_until[s.full_name]
 
             # Use name as pid for tmux (no pid prefix); screen keeps real pid
             updated.append(SessionState(
