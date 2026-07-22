@@ -153,24 +153,21 @@ class TaskPanel(Widget):
         for i, t in enumerate(self._tasks):
             if t["source"] == "builtin":
                 continue
-            # Recompute flat index into self._tasks for cursor matching
-            flat_i = self._tasks.index(t)
             if t["horizon"] != current_horizon:
                 current_horizon = t["horizon"]
                 heading = {"today": "TODAY", "this_week": "THIS WEEK"}.get(
                     current_horizon, current_horizon.upper()
                 )
                 lines.append(f"\n[bold]{heading}[/bold]")
-            lines.append(self._render_row(t, flat_i == cursor_idx))
-            if flat_i == cursor_idx:
+            lines.append(self._render_row(t, i == cursor_idx))
+            if i == cursor_idx:
                 cursor_line = len(lines) - 1
 
         if builtins:
             lines.append("\n[bold]PERMANENT[/bold]")
-            for t in builtins:
-                flat_i = self._tasks.index(t)
-                lines.append(self._render_row(t, flat_i == cursor_idx))
-                if flat_i == cursor_idx:
+            for i, t in enumerate(builtins, start=len(self._tasks) - len(builtins)):
+                lines.append(self._render_row(t, i == cursor_idx))
+                if i == cursor_idx:
                     cursor_line = len(lines) - 1
 
         content = "\n".join(lines) if lines else "[dim]No tasks.[/dim]"

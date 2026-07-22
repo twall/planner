@@ -57,3 +57,26 @@ def test_detect_state_active():
 def test_detect_state_attached():
     lines = ["some output"]
     assert detect_state(lines, idle_seconds=0, attached=True) == "ATTACHED"
+
+
+CLAUDE_IDLE_FOOTER = "  ⏸ manual mode on · ? for shortcuts · ← for agents"
+CLAUDE_ACTIVE_FOOTER = "  ⏸ manual mode on · esc to interrupt · ← for agents"
+
+
+def test_detect_state_claude_idle_footer_returns_idle_at_zero():
+    # Claude session at idle prompt: footer has "? for shortcuts", not "esc to interrupt"
+    # Should return IDLE even when idle_seconds < threshold (avoids false-ACTIVE on restart)
+    lines = ["❯ some prior command", "⏺ result", "❯\xa0", "──────", CLAUDE_IDLE_FOOTER]
+    assert detect_state(lines, idle_seconds=0) == "IDLE"
+
+
+def test_detect_state_claude_active_footer_returns_active():
+    # Claude session mid-turn: footer has "esc to interrupt"
+    lines = ["✻ Working… (5s · ↓ 123 tokens)", "──────", "❯\xa0", "──────", CLAUDE_ACTIVE_FOOTER]
+    assert detect_state(lines, idle_seconds=0) == "ACTIVE"
+
+
+def test_detect_state_non_claude_session_still_active_on_content_change():
+    # Non-Claude terminal (no Claude footer): content change = ACTIVE
+    lines = ["$ some bash output", "result here"]
+    assert detect_state(lines, idle_seconds=5) == "ACTIVE"

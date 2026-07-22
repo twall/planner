@@ -15,6 +15,10 @@ PROMPT_PATTERNS = [
     re.compile(r'Enter to select\s*[·•].*Esc to cancel', re.IGNORECASE),
 ]
 
+# Claude Code footer patterns
+_CLAUDE_FOOTER_RE = re.compile(r'manual mode|for shortcuts|esc to interrupt', re.IGNORECASE)
+_ACTIVE_FOOTER_RE = re.compile(r'esc to interrupt', re.IGNORECASE)
+
 PERMISSION_PATTERNS = [
     # Claude Code permission UI — require the trailing ? to avoid matching content diffs/configs
     re.compile(r'Allow this action\?'),
@@ -54,6 +58,23 @@ def detect_state(lines: list[str], idle_seconds: float, attached: bool = False,
             return "NEEDS INPUT"
     if idle_seconds >= idle_threshold:
         return "IDLE"
+    # Content recently changed (idle_seconds < threshold), but check whether Claude is
+    # actually processing. Screen hardcopy pads to full terminal height with blank lines,
+    # so inspect non-blank lines only. The footer line distinguishes idle ("? for shortcuts")
+    # from active ("esc to interrupt"). If the footer is idle and no active-turn indicator
+    # is present, return IDLE — avoids the ~30s false-ACTIVE window that occurs when a
+    # just-finished turn or fresh ScreenMonitor start produces a one-time content diff.
+    non_blank = [l for l in lines if l.strip()]
+    if non_blank:
+        footer = non_blank[-1]
+        # Claude Code footer is present — use it to distinguish idle vs active.
+        # "esc to interrupt" appears only during an active turn; "? for shortcuts"
+        # appears when Claude is idle at the prompt. Without this check, a single
+        # content diff (e.g. from fresh _snapshots on planner restart) would keep
+        # ALL sessions ACTIVE for up to idle_threshold seconds.
+        if _CLAUDE_FOOTER_RE.search(footer):
+            if not _ACTIVE_FOOTER_RE.search(footer):
+                return "IDLE"
     return "ACTIVE"
 
 
