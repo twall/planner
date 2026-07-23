@@ -62,6 +62,27 @@ def _send_commands(backend, full_name: str, text: str, auto_submit: bool = True)
         backend.send_raw(full_name, prompt)
 
 
+def _session_has_prior_output(backend, full_name: str) -> bool:
+    """Return True if the session has prior conversation content beyond the Claude header."""
+    lines = backend.capture(full_name)
+    skip_patterns = {"Claude Code", "Sonnet", "Opus", "Haiku", "manual mode", "Amazon Bedrock",
+                     "for shortcuts", "for agents", "MCP server"}
+    for line in lines:
+        stripped = line.strip()
+        if not stripped:
+            continue
+        # Prompt lines (with or without text after ❯)
+        if stripped.startswith("❯") or stripped.startswith(">") or stripped.startswith("─"):
+            continue
+        # Block chars used in the Claude logo
+        if stripped[0] in "▐▝▘":
+            continue
+        if any(kw in stripped for kw in skip_patterns):
+            continue
+        return True
+    return False
+
+
 def _wait_for_blank_prompt(backend, full_name: str, timeout: float = 60.0) -> bool:
     """Wait for the last ❯ line to be empty (Claude idle after /clear + SessionStart hooks).
     Ignores ❯ lines in scrollback that have text (e.g. '❯ /clear')."""
@@ -272,15 +293,14 @@ def run_recurring_via_session(db_path: Path, task_dict: dict, prompt: str,
             if _input_buffer_has_text(backend, name):
                 # Prompt already populated — leave it alone
                 return
-            # Escape aborts any buffered input, then /clear resets context
-            backend.send_raw(name, "\033")
-            time.sleep(0.1)
-            backend.send_input(name, "/clear")
-            # Wait for a blank ❯ prompt (SessionStart hooks can take 20-30s).
-            # _wait_for_claude_ready is fooled by "❯ /clear" in scrollback, so
-            # we wait specifically for the last ❯ line to have no text after it.
-            if not _wait_for_blank_prompt(backend, name, timeout=60.0):
-                return  # timed out — skip rather than inject mid-hook
+            if _session_has_prior_output(backend, name):
+                # Session has prior conversation — /clear resets context before injecting.
+                # Wait for blank ❯ after /clear; SessionStart hooks can take 20-30s.
+                backend.send_raw(name, "\033")
+                time.sleep(0.1)
+                backend.send_input(name, "/clear")
+                if not _wait_for_blank_prompt(backend, name, timeout=60.0):
+                    return  # timed out — skip rather than inject mid-hook
             _send_commands(backend, name, prompt, auto_submit=auto_submit)
             return
     full_name = launch_session(db_path, task_dict, send_prompt=False)
