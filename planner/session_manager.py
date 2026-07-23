@@ -42,10 +42,13 @@ def _live_sessions() -> dict[str, dict]:
         return {}
 
 
-def _rename_claude_session(backend, full_name: str, title: str) -> None:
+def _rename_claude_session(backend, full_name: str, title: str, jira_key: str | None = None) -> None:
     """Send /rename <title> to set the Claude session name."""
     safe_title = title.replace("\n", " ").replace("\r", " ").strip()
-    backend.send_input(full_name, f"/rename {safe_title}")
+    # Keep rename short: "PLEX-123 short title" truncated to ~60 chars
+    label = f"{jira_key} {safe_title}" if jira_key else safe_title
+    label = label[:60].strip()
+    backend.send_input(full_name, f"/rename {label}")
 
 
 def _send_commands(backend, full_name: str, text: str, auto_submit: bool = True) -> None:
@@ -107,9 +110,10 @@ def launch_session(db_path: Path, task: dict, cwd: str | None = None,
         is_prompt = 1
     if task.get("title"):
         _wait_for_claude_ready(backend, full_name)
-        _rename_claude_session(backend, full_name, task["title"])
+        _rename_claude_session(backend, full_name, task["title"], jira_key=task.get("jira_key"))
+        _wait_for_claude_ready(backend, full_name)
     if send_prompt and task.get("description") and bool(int(is_prompt)):
-        _send_commands(backend, full_name, task["description"])
+        _send_commands(backend, full_name, task["description"], auto_submit=False)
     return full_name
 
 

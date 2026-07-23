@@ -1,3 +1,4 @@
+import subprocess
 from pathlib import Path
 from textual.app import ComposeResult
 from textual.containers import Horizontal, Vertical
@@ -192,21 +193,26 @@ class TaskEditPane(Widget):
             inp.disabled = readonly
         ta = self.query_one("#edit-desc", TextArea)
         ta.read_only = readonly
-        ta.can_focus = not readonly
+        ta.can_focus = True  # always focusable so user can select/copy text
+
+    def _copy_to_clipboard(self, text: str) -> None:
+        if not text:
+            return
+        subprocess.run(["pbcopy"], input=text, text=True, check=False)
 
     def _update_hint(self) -> None:
         hint = self.query_one("#edit-hint", Static)
         if not self._current_task:
             hint.update("")
         elif self._editing:
-            hint.update("[dim][bold]● EDITING[/bold]  ctrl+s: save  ·  esc: cancel  ·  ctrl+d: disposable  ·  tab: next[/dim]")
+            hint.update("[dim][bold]● EDITING[/bold]  ctrl+s: save  ·  esc: cancel  ·  ctrl+d: disposable  ·  ctrl+y: copy prompt  ·  tab: next[/dim]")
         else:
             if self._current_task.get("source") == "builtin":
                 session_hint = "" if self._has_live_session else "  ·  ctrl+s: start session"
-                hint.update(f"[dim][italic]built-in task[/italic]  ·  ←/→: switch pane{session_hint}[/dim]")
+                hint.update(f"[dim][italic]built-in task[/italic]  ·  ←/→: switch pane  ·  ctrl+y: copy prompt{session_hint}[/dim]")
             else:
                 session_hint = "" if self._has_live_session else "  ·  ctrl+s: start session"
-                hint.update(f"[dim]enter: edit  ·  ←/→: switch pane{session_hint}[/dim]")
+                hint.update(f"[dim]enter: edit  ·  ←/→: switch pane  ·  ctrl+y: copy prompt{session_hint}[/dim]")
 
     def enter_edit(self) -> None:
         if not self._current_task or self._editing:
@@ -283,10 +289,24 @@ class TaskEditPane(Widget):
             self._save()
 
     def on_key(self, event) -> None:
-        if not self._editing:
-            return
         focused = self.app.focused
         in_textarea = isinstance(focused, TextArea)
+
+        if event.key == "ctrl+y":
+            event.stop()
+            text = self.query_one("#edit-desc", TextArea).text
+            self._copy_to_clipboard(text)
+            self.app.notify("Prompt copied to clipboard", timeout=2)
+            return
+        if event.key in ("ctrl+c", "cmd+c") and in_textarea:
+            ta = self.query_one("#edit-desc", TextArea)
+            selected = ta.selected_text
+            self._copy_to_clipboard(selected if selected else ta.text)
+            event.stop()
+            return
+
+        if not self._editing:
+            return
 
         if event.key == "ctrl+s":
             event.stop()
