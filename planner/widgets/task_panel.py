@@ -136,6 +136,7 @@ class TaskPanel(Widget):
         if task_id in ids:
             self._selected_id = task_id
             self._render_tasks()
+            self._emit_selected()
 
     def _emit_selected(self) -> None:
         self.post_message(self.TaskSelected(self._selected_task()))

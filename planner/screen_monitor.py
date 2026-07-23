@@ -128,6 +128,10 @@ class ScreenMonitor:
         with self._lock:
             return list(self._sessions)
 
+    def wake(self, full_name: str) -> None:
+        """Force the next poll to re-capture this session (clears idle skip)."""
+        self._skip_until.pop(full_name, None)
+
     def _poll_loop(self) -> None:
         while self._running:
             self._poll()

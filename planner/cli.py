@@ -28,6 +28,9 @@ Commands:
       --title "..."                  Rename the session
       --desc "..."                   Set the description/prompt
 
+  delete <id>
+      Delete a task by id (marks it done and kills its session if running).
+
   export
       Write recurring session schedule fields from DB back to sessions.json.
 
@@ -209,6 +212,28 @@ def main(argv: list[str] | None = None) -> int:
         update_task(DB_PATH, task_id, **fields)
         changes = ", ".join(f"{k}={v!r}" for k, v in fields.items())
         print(f"Updated task #{task_id}: {changes}")
+        return 0
+
+    elif command == "delete":
+        from planner.db import update_task
+        if not rest:
+            print("Usage: planner.cli delete <id>", file=sys.stderr)
+            return 1
+        try:
+            task_id = int(rest[0])
+        except ValueError:
+            print(f"Error: id must be an integer, got {rest[0]!r}", file=sys.stderr)
+            return 1
+        tasks = list_tasks(DB_PATH)
+        t = next((t for t in tasks if t["id"] == task_id), None)
+        if t is None:
+            print(f"No open task with id {task_id}", file=sys.stderr)
+            return 1
+        if t.get("screen_session"):
+            from planner.session_manager import kill_session
+            kill_session(t["screen_session"])
+        update_task(DB_PATH, task_id, status="done", screen_session=None, claude_session_id=None)
+        print(f"Deleted task #{task_id}: {t['title']}")
         return 0
 
     elif command == "export":

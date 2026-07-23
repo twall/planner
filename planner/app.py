@@ -661,19 +661,42 @@ class PlannerApp(App):
         except Exception as e:
             self.call_from_thread(self.notify, f"JIRA sync failed: {e}", severity="error")
 
-    def _run_named_task(self, name: str, label: str) -> None:
-        task = next((t for t in self._scheduler.load_tasks() if t.name == name), None)
-        if task is None:
-            self.notify(f"Recurring session '{name}' not found in sessions.json", severity="warning")
+    def _run_task_by_id(self, task_id: int) -> None:
+        from planner.db import list_tasks
+        db_task = next((t for t in list_tasks(DB_PATH) if t["id"] == task_id), None)
+        if db_task is None:
+            self.notify(f"Task #{task_id} not found", severity="warning")
             return
-        self.run_worker(lambda: self._scheduler.run_task(task), thread=True)
-        self.notify(f"Running {label}...")
+        source = db_task.get("source")
+        sched_task = next((t for t in self._scheduler.load_tasks() if t.name == source), None)
+        if sched_task is None:
+            self.notify(f"No recurring config for source '{source}'", severity="warning")
+            return
+        screen_session = db_task.get("screen_session")
+
+        def _run_and_wake():
+            self._scheduler.run_task(sched_task)
+            if screen_session:
+                self._monitor.wake(screen_session)
+
+        self.run_worker(_run_and_wake, thread=True)
+        self.notify(f"Running {db_task.get('title') or source}...")
+        self.query_one(TaskPanel).select_by_id(task_id)
+
+    def _run_by_source(self, source: str) -> None:
+        """Look up the DB task for a recurring source and run it by ID."""
+        from planner.db import list_tasks
+        db_task = next((t for t in list_tasks(DB_PATH) if t.get("source") == source), None)
+        if db_task is None:
+            self.notify(f"No task with source '{source}'", severity="warning")
+            return
+        self._run_task_by_id(db_task["id"])
 
     def action_run_slack(self) -> None:
-        self._run_named_task("slack", "Slack digest")
+        self._run_by_source("slack")
 
     def action_run_bitbucket(self) -> None:
-        self._run_named_task("git", "PR review")
+        self._run_by_source("git")
 
     def action_run_all(self) -> None:
         self.run_worker(self._scheduler.run_all_due, thread=True)
@@ -688,10 +711,7 @@ class PlannerApp(App):
         task = self.query_one(TaskPanel)._selected_task()
         if not task or task.get("source") not in RECURRING_SOURCES:
             return
-        rt = next((t for t in self._scheduler.load_tasks() if t.name == task.get("source")), None)
-        if rt is None:
-            return
-        self._run_named_task(task["source"], task.get("title") or task["source"])
+        self._run_task_by_id(task["id"])
 
     def on_task_panel_task_selected(self, event: TaskPanel.TaskSelected) -> None:
         task = event.task

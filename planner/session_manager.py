@@ -62,6 +62,23 @@ def _send_commands(backend, full_name: str, text: str, auto_submit: bool = True)
         backend.send_raw(full_name, prompt)
 
 
+def _wait_for_blank_prompt(backend, full_name: str, timeout: float = 60.0) -> bool:
+    """Wait for the last ❯ line to be empty (Claude idle after /clear + SessionStart hooks).
+    Ignores ❯ lines in scrollback that have text (e.g. '❯ /clear')."""
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        lines = backend.capture(full_name)
+        for line in reversed(lines):
+            stripped = line.strip()
+            if stripped.startswith("❯") or (stripped.startswith(">") and not stripped.startswith(">>")):
+                after = stripped[1:].strip()
+                if not after:
+                    return True
+                break  # last prompt has text — still processing
+        time.sleep(0.5)
+    return False
+
+
 def _wait_for_claude_ready(backend, full_name: str, timeout: float = 15.0) -> bool:
     """Poll screen capture until claude's idle input prompt (❯) is visible. Returns True if ready."""
     deadline = time.monotonic() + timeout
@@ -74,6 +91,8 @@ def _wait_for_claude_ready(backend, full_name: str, timeout: float = 15.0) -> bo
                 return True
         time.sleep(0.5)
     return False
+
+
 
 
 def _input_buffer_has_text(backend, full_name: str) -> bool:
@@ -257,8 +276,11 @@ def run_recurring_via_session(db_path: Path, task_dict: dict, prompt: str,
             backend.send_raw(name, "\033")
             time.sleep(0.1)
             backend.send_input(name, "/clear")
-            # Wait for /clear + SessionStart hooks to finish before populating
-            time.sleep(1.5)
+            # Wait for a blank ❯ prompt (SessionStart hooks can take 20-30s).
+            # _wait_for_claude_ready is fooled by "❯ /clear" in scrollback, so
+            # we wait specifically for the last ❯ line to have no text after it.
+            if not _wait_for_blank_prompt(backend, name, timeout=60.0):
+                return  # timed out — skip rather than inject mid-hook
             _send_commands(backend, name, prompt, auto_submit=auto_submit)
             return
     full_name = launch_session(db_path, task_dict, send_prompt=False)
