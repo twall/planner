@@ -402,7 +402,7 @@ class PlannerApp(App):
         Binding("b", "run_bitbucket", "PRs"),
         Binding("s", "run_slack", "Slack digest"),
         Binding("R", "run_all", "Run all"),
-        Binding("r", "rerun_task", "Re-run", show=False),
+        Binding("r", "rerun_task", "Re-run"),
         Binding("i", "ignore_session", "Ignore session", show=True),
         Binding("shift+enter", "accept_permission", "Accept", show=False),
         Binding("u", "upgrade", "Upgrade", show=False),

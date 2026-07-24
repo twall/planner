@@ -1,5 +1,6 @@
 import re
 import subprocess
+import time
 from pathlib import Path
 
 from planner.backends.base import RawSession, SessionBackend
@@ -41,10 +42,15 @@ class ScreenBackend(SessionBackend):
         )
 
     def send_raw(self, full_name: str, text: str) -> None:
-        subprocess.run(
-            ["screen", "-S", full_name, "-X", "stuff", text],
-            capture_output=True, timeout=5
-        )
+        # screen 'stuff' truncates at ~200 chars; chunk to avoid silent truncation
+        chunk_size = 150
+        for i in range(0, len(text), chunk_size):
+            subprocess.run(
+                ["screen", "-S", full_name, "-X", "stuff", text[i:i + chunk_size]],
+                capture_output=True, timeout=5
+            )
+            if i + chunk_size < len(text):
+                time.sleep(0.05)
 
     def attach_cmd(self, full_name: str) -> str:
         return f"screen -d -r {full_name}"
