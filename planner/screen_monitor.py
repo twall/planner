@@ -16,7 +16,8 @@ PROMPT_PATTERNS = [
 ]
 
 # Claude Code footer: present in all Claude sessions (idle, active, diff review, etc.)
-_CLAUDE_FOOTER_RE = re.compile(r'for agents', re.IGNORECASE)
+# Matches both "? for shortcuts" (idle at prompt, including while typing) and "for agents"
+_CLAUDE_FOOTER_RE = re.compile(r'for shortcuts|for agents', re.IGNORECASE)
 # Active turn only — absent when idle, in diff review, or any non-processing state
 _ACTIVE_FOOTER_RE = re.compile(r'esc to interrupt', re.IGNORECASE)
 
