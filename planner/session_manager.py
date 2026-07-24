@@ -223,9 +223,6 @@ def resume_session(db_path: Path, task: dict, cwd: str | None = None,
     if effective_cwd:
         update_kwargs["cwd"] = effective_cwd
     update_task(db_path, task_id, **update_kwargs)
-    if task.get("title"):
-        _wait_for_claude_ready(backend, full_name)
-        _rename_claude_session(backend, full_name, task["title"])
     return full_name
 
 

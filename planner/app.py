@@ -732,7 +732,7 @@ class PlannerApp(App):
         task = next((t for t in tasks if t["id"] == event.task_id), None)
         if task and task.get("screen_session") and task.get("title"):
             live = self._get_session_for_task(task)
-            if live:
+            if live and live.name != task["title"][:60]:
                 from planner.session_manager import _rename_claude_session
                 from planner.backends import get_backend
                 _rename_claude_session(get_backend(), task["screen_session"], task["title"])
