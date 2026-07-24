@@ -151,7 +151,7 @@ def launch_session(db_path: Path, task: dict, cwd: str | None = None,
     if task.get("title"):
         _wait_for_claude_ready(backend, full_name)
         _rename_claude_session(backend, full_name, task["title"], jira_key=task.get("jira_key"))
-        _wait_for_claude_ready(backend, full_name)
+        _wait_for_blank_prompt(backend, full_name, timeout=60.0)
     if send_prompt and task.get("description") and bool(int(is_prompt)):
         _send_commands(backend, full_name, task["description"], auto_submit=False)
     return full_name
