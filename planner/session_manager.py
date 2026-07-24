@@ -42,12 +42,17 @@ def _live_sessions() -> dict[str, dict]:
         return {}
 
 
+def _session_label(task: dict) -> str:
+    """Build a short session name label from task title + optional jira key."""
+    title = (task.get("title") or "").replace("\n", " ").replace("\r", " ").strip()
+    jira_key = task.get("jira_key")
+    label = f"{jira_key} {title}" if jira_key else title
+    return label[:60].strip()
+
+
 def _rename_claude_session(backend, full_name: str, title: str, jira_key: str | None = None) -> None:
     """Send /rename <title> to set the Claude session name."""
-    safe_title = title.replace("\n", " ").replace("\r", " ").strip()
-    # Keep rename short: "PLEX-123 short title" truncated to ~60 chars
-    label = f"{jira_key} {safe_title}" if jira_key else safe_title
-    label = label[:60].strip()
+    label = _session_label({"title": title, "jira_key": jira_key})
     backend.send_input(full_name, f"/rename {label}")
 
 
@@ -135,7 +140,11 @@ def launch_session(db_path: Path, task: dict, cwd: str | None = None,
     task_id = task["id"]
     name = session_name_for(task_id, task.get("title"))
     session_id = str(uuid.uuid4())
+    label = _session_label(task)
     shell_cmd = f"exec claude --session-id {session_id}"
+    if label:
+        import shlex
+        shell_cmd += f" --name {shlex.quote(label)}"
     effective_launch_cwd = str(Path(cwd).expanduser()) if cwd else None
     backend.launch(name, shell_cmd, cwd=effective_launch_cwd, cols=cols, rows=rows)
     # full_name differs by backend: screen uses PID.name, tmux uses name
@@ -148,10 +157,6 @@ def launch_session(db_path: Path, task: dict, cwd: str | None = None,
     is_prompt = task.get("is_prompt", 1)
     if is_prompt is None:
         is_prompt = 1
-    if task.get("title"):
-        _wait_for_claude_ready(backend, full_name)
-        _rename_claude_session(backend, full_name, task["title"], jira_key=task.get("jira_key"))
-        _wait_for_blank_prompt(backend, full_name, timeout=60.0)
     if send_prompt and task.get("description") and bool(int(is_prompt)):
         _send_commands(backend, full_name, task["description"], auto_submit=False)
     return full_name
