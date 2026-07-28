@@ -58,6 +58,13 @@ def detect_state(lines: list[str], idle_seconds: float, attached: bool = False,
     for pattern in PROMPT_PATTERNS:
         if pattern.search(recent):
             return "NEEDS INPUT"
+    # If previously waiting for user action, stay sticky until Claude footer confirms idle/active.
+    # Avoids NEEDS PERMISSION → ACTIVE oscillation when capture races with mid-render content.
+    if prev_state in ("NEEDS PERMISSION", "NEEDS INPUT"):
+        non_blank = [l for l in lines if l.strip()]
+        footer = non_blank[-1] if non_blank else ""
+        if not _CLAUDE_FOOTER_RE.search(footer):
+            return prev_state
     if idle_seconds >= idle_threshold:
         return "IDLE"
     # Content recently changed (idle_seconds < threshold), but check whether Claude is
@@ -184,7 +191,11 @@ class ScreenMonitor:
             if s.full_name in captures:
                 lines = captures[s.full_name]
                 prev_lines, prev_time = self._snapshots.get(s.full_name, (None, now))
-                if lines != prev_lines:
+                # Ignore empty captures — hardcopy can return nothing during rapid state
+                # transitions; treat as no change rather than blanking the display.
+                if not any(l.strip() for l in lines):
+                    lines = prev_lines or []
+                elif lines != prev_lines:
                     self._snapshots[s.full_name] = (lines, now)
                     self._skip_until.pop(s.full_name, None)
                 idle_secs = now - self._snapshots[s.full_name][1]
