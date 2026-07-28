@@ -147,6 +147,41 @@ class ScreenMonitor:
         """Force the next poll to re-capture this session (clears idle skip)."""
         self._skip_until.pop(full_name, None)
 
+    def capture_now(self, full_name: str) -> None:
+        """Immediately capture one session and update _sessions — used on detach return."""
+        import time as _time
+        now = _time.monotonic()
+        try:
+            lines = self._backend.capture(full_name)
+        except Exception:
+            return
+        if not any(l.strip() for l in lines):
+            return
+        self._snapshots[full_name] = (lines, now)
+        self._skip_until.pop(full_name, None)
+        with self._lock:
+            updated = []
+            found = False
+            for s in self._sessions:
+                if s.full_name == full_name:
+                    prev_state = s.state
+                    state = detect_state(lines, 0, False, self._idle_threshold, prev_state)
+                    updated.append(SessionState(
+                        pid=s.pid, name=s.name, full_name=s.full_name,
+                        attached=False, state=state, idle_seconds=0, last_lines=lines
+                    ))
+                    found = True
+                else:
+                    updated.append(s)
+            if not found:
+                name = full_name.split(".", 1)[1] if "." in full_name else full_name
+                state = detect_state(lines, 0, False, self._idle_threshold, "")
+                updated.append(SessionState(
+                    pid=name, name=name, full_name=full_name,
+                    attached=False, state=state, idle_seconds=0, last_lines=lines
+                ))
+            self._sessions = updated
+
     def _poll_loop(self) -> None:
         while self._running:
             self._poll()
