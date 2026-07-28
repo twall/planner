@@ -17,7 +17,7 @@ PROMPT_PATTERNS = [
 
 # Claude Code footer: present in all Claude sessions (idle, active, diff review, etc.)
 # Matches both "? for shortcuts" (idle at prompt, including while typing) and "for agents"
-_CLAUDE_FOOTER_RE = re.compile(r'for shortcuts|for agents', re.IGNORECASE)
+_CLAUDE_FOOTER_RE = re.compile(r'for shortcuts|for agents|manual mode|accept edits', re.IGNORECASE)
 # Active turn only — absent when idle, in diff review, or any non-processing state
 _ACTIVE_FOOTER_RE = re.compile(r'esc to interrupt', re.IGNORECASE)
 
@@ -113,9 +113,16 @@ class ScreenMonitor:
         cached = load_session_states()
         self._sessions: list[SessionState] = [
             SessionState(pid=fn, name=fn.split(".", 1)[1] if "." in fn else fn,
-                         full_name=fn, attached=False, state=state)
-            for fn, state in cached.items()
+                         full_name=fn, attached=False,
+                         state=entry["state"], last_lines=entry["lines"])
+            for fn, entry in cached.items()
         ]
+        # Restore idle-skip so sessions that were IDLE stay skipped after restart.
+        # The caller (app._startup_inner) must wake any session that needs re-analysis
+        # (e.g. the session the user just detached from) before the first eager poll.
+        for fn, entry in cached.items():
+            if entry["state"] == "IDLE":
+                self._skip_until[fn] = float("inf")
 
     def start(self) -> None:
         self._running = True

@@ -247,9 +247,21 @@ def import_orphan_sessions(db_path: Path) -> int:
 
     ignored = load_ignored_sessions()
     task_by_id = {t["id"]: t for t in tasks}
+    # Build bare-name → task map for stale PID detection
+    bare_to_task = {}
+    for t in tasks:
+        if t.get("screen_session") and "." in t["screen_session"]:
+            bare_to_task[t["screen_session"].split(".", 1)[1]] = t
+
     imported = 0
     for full_name, s in live.items():
-        if s["name"] in linked_names or full_name in linked_names:
+        if full_name in linked_names:
+            continue
+        if s["name"] in linked_names:
+            # Bare name already linked — update DB if PID changed (e.g. after planner restart)
+            task = bare_to_task.get(s["name"])
+            if task and task.get("screen_session") != full_name:
+                update_task(db_path, task["id"], screen_session=full_name)
             continue
         if s["name"] in ignored or full_name in ignored:
             continue

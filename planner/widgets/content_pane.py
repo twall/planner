@@ -49,7 +49,10 @@ class ContentPane(Widget):
         if session:
             color = STATE_COLORS.get(session.state, "white")
             width = max(self.content_size.width - 2, 20)
-            lines = session.last_lines[-30:] if session.last_lines else []
+            raw = session.last_lines
+            while raw and not raw[-1].strip():
+                raw = raw[:-1]
+            lines = raw[-30:]
             # Build as Rich Text to avoid markup parser touching raw session output
             t = Text()
             t.append(f"● {session.full_name}  {session.state}", style=color)

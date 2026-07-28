@@ -552,12 +552,20 @@ class PlannerApp(App):
         _purge_stale_planner_session_tasks(DB_PATH)
         _kill_stale_planner_screens()
         resume_sessions(DB_PATH)
+        # Wake the previously-selected session before the eager poll — it was likely
+        # the one the user just detached from and needs fresh state regardless of cache.
+        ui = load_state()
+        if ui.get("selected_task_id"):
+            from planner.db import list_tasks as _list_tasks
+            _tasks = _list_tasks(DB_PATH)
+            _sel = next((t for t in _tasks if t["id"] == ui["selected_task_id"]), None)
+            if _sel and _sel.get("screen_session"):
+                self._monitor.wake(_sel["screen_session"])
         # Eager poll so session states are populated before first render
         self._monitor._poll()
         panel = self.query_one(TaskPanel)
         panel.update_sessions(self._monitor.get_sessions())
         panel.refresh_tasks()
-        ui = load_state()
         if ui.get("selected_task_id"):
             panel.select_by_id(ui["selected_task_id"])
         self.query_one("#loading").add_class("visible")
