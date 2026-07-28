@@ -90,7 +90,7 @@ class TaskPanel(Widget):
 
     def _status_rank(self, t: dict) -> int:
         """Sort key within a group: awaiting input, working, idle, no session, done."""
-        sess = self._session_states.get(t.get("screen_session", ""))
+        sess = self._session_states.get(t.get("screen_session") or "")
         if sess:
             if sess.state in ("NEEDS INPUT", "NEEDS PERMISSION"):
                 return 0
@@ -181,7 +181,7 @@ class TaskPanel(Widget):
         tag = SOURCE_TAG.get(t["source"], t["source"].upper())
         cursor = "▶ " if is_cursor else "  "
         jira = f"[{t['jira_key']}] " if t.get("jira_key") else f"[{tag}] "
-        sess = self._session_states.get(t.get("screen_session", ""))
+        sess = self._session_states.get(t.get("screen_session") or "")
         if sess:
             color = STATE_COLORS.get(sess.state, "white")
             if sess.state == "ACTIVE":
