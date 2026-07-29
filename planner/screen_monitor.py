@@ -142,9 +142,6 @@ class ScreenMonitor:
         self._running = False
         # claude_session_id → full_name mapping, updated each poll from DB
         self._claude_id_to_session: dict[str, str] = {}
-        # True on first poll only — treat all detached sessions as just_detached so
-        # the session the user detached from gets an immediate capture on restart.
-        self._first_poll = True
         from planner.backends import get_backend
         self._backend = get_backend()
         # Seed display with cached states from previous run; first poll overwrites.
@@ -256,14 +253,8 @@ class ScreenMonitor:
         # Skip capturing sessions confirmed idle for a long time.
         # Always capture: attached, just-detached, awaiting input/permission, hook-signaled.
         needs_response = {"NEEDS PERMISSION", "NEEDS INPUT"}
-        if self._first_poll:
-            # On restart, treat all non-attached sessions as just_detached so the
-            # session the user was in gets a fresh capture before first render.
-            just_detached = {s.full_name for s in raw if not s.attached}
-            self._first_poll = False
-        else:
-            just_detached = {s.full_name for s in raw
-                             if not s.attached and prev_attached.get(s.full_name, False)}
+        just_detached = {s.full_name for s in raw
+                         if not s.attached and prev_attached.get(s.full_name, False)}
         to_capture = [s for s in raw
                       if s.attached or s.full_name in just_detached
                       or prev_states.get(s.full_name, "") in needs_response
@@ -273,7 +264,7 @@ class ScreenMonitor:
         # Capture eligible sessions in parallel — sequential screen hardcopy is ~400ms each
         captures: dict[str, list[str]] = {}
         if to_capture:
-            workers = min(len(to_capture), 10)
+            workers = min(len(to_capture), 6)
             with ThreadPoolExecutor(max_workers=workers) as pool:
                 futures = {pool.submit(self._backend.capture, s.full_name): s for s in to_capture}
                 for fut in as_completed(futures):

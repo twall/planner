@@ -556,11 +556,12 @@ class PlannerApp(App):
         ui = load_state()
         from planner.db import list_tasks as _list_tasks
         _tasks = _list_tasks(DB_PATH)
-        # Immediately capture all sessions with active Claude conversations — they can
-        # be in any state (ACTIVE, NEEDS PERMISSION) regardless of cached idle status.
+        # Wake all sessions with active Claude conversations so _poll captures them.
+        # (capture_now is called per-session sequentially; wake is instant and lets
+        # the parallel _poll handle all captures in one pass.)
         for _t in _tasks:
             if _t.get("screen_session") and _t.get("claude_session_id"):
-                self._monitor.capture_now(_t["screen_session"])
+                self._monitor.wake(_t["screen_session"])
         # Eager poll so session states are populated before first render
         self._monitor._poll()
         panel = self.query_one(TaskPanel)
