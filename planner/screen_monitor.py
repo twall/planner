@@ -137,6 +137,8 @@ class ScreenMonitor:
         self._running = False
         # claude_session_id → full_name mapping, updated each poll from DB
         self._claude_id_to_session: dict[str, str] = {}
+        # Last seen hook state per session — detect transitions to trigger fresh capture
+        self._last_hook_state: dict[str, str] = {}
         from planner.backends import get_backend
         self._backend = get_backend()
         # Seed display with cached states from previous run; first poll overwrites.
@@ -246,8 +248,12 @@ class ScreenMonitor:
             if hstate == "ACTIVE" and age > 30:
                 continue  # stale active — ignore
             hook_by_session[full] = hstate
-            # Wake sessions that hooks say are non-idle so they get captured
-            if hstate != "IDLE":
+            # On any hook state transition, wake for immediate capture — content changed.
+            if self._last_hook_state.get(full) != hstate:
+                self._skip_until.pop(full, None)
+                self._last_hook_state[full] = hstate
+            # Also wake non-idle sessions unconditionally
+            elif hstate != "IDLE":
                 self._skip_until.pop(full, None)
 
         # Skip capturing sessions confirmed idle for a long time.
