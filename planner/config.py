@@ -8,6 +8,7 @@ SETTINGS_PATH = PLANNER_ROOT / "settings.json"
 
 STATE_PATH = Path.home() / ".planner" / "state.json"
 IGNORED_SESSIONS_PATH = Path.home() / ".planner" / "ignored_sessions.json"
+HOOK_STATE_DIR = Path.home() / ".planner" / "hook_states"
 
 SCREEN_POLL_INTERVAL = 5
 SCREEN_IDLE_THRESHOLD = 30

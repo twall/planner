@@ -3,7 +3,7 @@ import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
-from planner.config import SCREEN_POLL_INTERVAL, SCREEN_IDLE_THRESHOLD
+from planner.config import SCREEN_POLL_INTERVAL, SCREEN_IDLE_THRESHOLD, HOOK_STATE_DIR
 
 
 PROMPT_PATTERNS = [
@@ -103,6 +103,33 @@ def parse_screen_ls(output: str) -> list[dict]:
 
 
 
+_HOOK_STATE_MAP = {
+    "idle": "IDLE",
+    "active": "ACTIVE",
+    "needs-permission": "NEEDS PERMISSION",
+    "needs-input": "NEEDS INPUT",
+}
+
+
+def _read_hook_states() -> dict[str, tuple[str, float]]:
+    """Read hook state files. Returns {claude_session_id: (state, ts)}."""
+    result: dict[str, tuple[str, float]] = {}
+    if not HOOK_STATE_DIR.exists():
+        return result
+    for f in HOOK_STATE_DIR.glob("*.json"):
+        try:
+            import json as _json
+            data = _json.loads(f.read_text())
+            sid = f.stem
+            state = _HOOK_STATE_MAP.get(data.get("state", ""), "")
+            ts = float(data.get("ts", 0))
+            if state:
+                result[sid] = (state, ts)
+        except Exception:
+            pass
+    return result
+
+
 class ScreenMonitor:
     def __init__(self, poll_interval: int = SCREEN_POLL_INTERVAL,
                  idle_threshold: int = SCREEN_IDLE_THRESHOLD):
@@ -113,6 +140,11 @@ class ScreenMonitor:
         self._skip_until: dict[str, float] = {}
         self._thread: threading.Thread | None = None
         self._running = False
+        # claude_session_id → full_name mapping, updated each poll from DB
+        self._claude_id_to_session: dict[str, str] = {}
+        # True on first poll only — treat all detached sessions as just_detached so
+        # the session the user detached from gets an immediate capture on restart.
+        self._first_poll = True
         from planner.backends import get_backend
         self._backend = get_backend()
         # Seed display with cached states from previous run; first poll overwrites.
@@ -198,14 +230,44 @@ class ScreenMonitor:
         prev_map = {s.full_name: s for s in self._sessions}
         prev_attached = {s.full_name: s.attached for s in self._sessions}
 
+        # Refresh claude_session_id → full_name mapping from DB
+        try:
+            from planner.db import list_tasks
+            from planner.config import DB_PATH
+            self._claude_id_to_session = {
+                t["claude_session_id"]: t["screen_session"]
+                for t in list_tasks(DB_PATH)
+                if t.get("claude_session_id") and t.get("screen_session")
+            }
+        except Exception:
+            pass
+
+        # Hook states: override detect_state when a hook has reported within the last 30s
+        hook_states = _read_hook_states()
+        hook_by_session: dict[str, str] = {}
+        for cid, (hstate, hts) in hook_states.items():
+            full = self._claude_id_to_session.get(cid)
+            if full and (time.time() - hts) < 30:
+                hook_by_session[full] = hstate
+                # Wake sessions that hooks say are non-idle
+                if hstate != "IDLE":
+                    self._skip_until.pop(full, None)
+
         # Skip capturing sessions confirmed idle for a long time.
-        # Always capture: attached, just-detached, awaiting input/permission.
+        # Always capture: attached, just-detached, awaiting input/permission, hook-signaled.
         needs_response = {"NEEDS PERMISSION", "NEEDS INPUT"}
-        just_detached = {s.full_name for s in raw
-                         if not s.attached and prev_attached.get(s.full_name, False)}
+        if self._first_poll:
+            # On restart, treat all non-attached sessions as just_detached so the
+            # session the user was in gets a fresh capture before first render.
+            just_detached = {s.full_name for s in raw if not s.attached}
+            self._first_poll = False
+        else:
+            just_detached = {s.full_name for s in raw
+                             if not s.attached and prev_attached.get(s.full_name, False)}
         to_capture = [s for s in raw
                       if s.attached or s.full_name in just_detached
                       or prev_states.get(s.full_name, "") in needs_response
+                      or s.full_name in hook_by_session
                       or now >= self._skip_until.get(s.full_name, 0)]
 
         # Capture eligible sessions in parallel — sequential screen hardcopy is ~400ms each
@@ -243,6 +305,10 @@ class ScreenMonitor:
 
             prev_state = prev_states.get(s.full_name, "")
             state = detect_state(lines, idle_secs, s.attached, self._idle_threshold, prev_state)
+
+            # Hook state takes precedence — it's directly reported by Claude Code.
+            if s.full_name in hook_by_session:
+                state = hook_by_session[s.full_name]
 
             # Reduce polling frequency for idle sessions — re-check every 120s rather
             # than every poll interval. Never skip permanently: Claude can start a new

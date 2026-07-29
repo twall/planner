@@ -1,7 +1,7 @@
 import json
 import sys
 from pathlib import Path
-from planner.config import DB_PATH, TASKS_CONFIG_PATH
+from planner.config import DB_PATH, TASKS_CONFIG_PATH, HOOK_STATE_DIR
 from planner.db import init_db, add_task, list_tasks
 
 INBOX_PATH = Path.home() / ".planner" / "inbox.json"
@@ -234,6 +234,32 @@ def main(argv: list[str] | None = None) -> int:
             kill_session(t["screen_session"])
         update_task(DB_PATH, task_id, status="done", screen_session=None, claude_session_id=None)
         print(f"Deleted task #{task_id}: {t['title']}")
+        return 0
+
+    elif command == "notify":
+        # notify --session-id <claude_session_id> --state <idle|active|needs-permission|needs-input>
+        # Called from Claude Code hooks to push real-time state.
+        session_id = None
+        state = None
+        i = 0
+        while i < len(rest):
+            if rest[i] == "--session-id" and i + 1 < len(rest):
+                session_id = rest[i + 1]; i += 2
+            elif rest[i] == "--state" and i + 1 < len(rest):
+                state = rest[i + 1]; i += 2
+            else:
+                i += 1
+        if not session_id or not state:
+            print("Usage: planner.cli notify --session-id <id> --state <state>", file=sys.stderr)
+            return 1
+        valid = {"idle", "active", "needs-permission", "needs-input"}
+        if state not in valid:
+            print(f"Error: state must be one of {sorted(valid)}", file=sys.stderr)
+            return 1
+        HOOK_STATE_DIR.mkdir(parents=True, exist_ok=True)
+        import time as _time
+        state_file = HOOK_STATE_DIR / f"{session_id}.json"
+        state_file.write_text(json.dumps({"state": state, "ts": _time.time()}))
         return 0
 
     elif command == "export":
