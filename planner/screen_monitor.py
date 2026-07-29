@@ -233,7 +233,7 @@ class ScreenMonitor:
                 elif lines != prev_lines:
                     self._snapshots[s.full_name] = (lines, now)
                     self._skip_until.pop(s.full_name, None)
-                idle_secs = now - self._snapshots[s.full_name][1]
+                idle_secs = now - self._snapshots.get(s.full_name, (None, now))[1]
             else:
                 # Skipped — reuse previous state
                 prev = prev_map.get(s.full_name)

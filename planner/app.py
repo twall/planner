@@ -502,8 +502,7 @@ class PlannerApp(App):
         try:
             await self._startup_inner()
         except Exception as e:
-            import traceback
-            self.notify(f"Startup error: {e}\n{traceback.format_exc()[-300:]}", severity="error", timeout=30)
+            self.notify(f"Startup error: {e}", severity="error", timeout=10)
 
     async def _startup_inner(self) -> None:
         from planner.db import add_task, list_tasks
