@@ -552,15 +552,15 @@ class PlannerApp(App):
         _purge_stale_planner_session_tasks(DB_PATH)
         _kill_stale_planner_screens()
         resume_sessions(DB_PATH)
-        # Immediately capture the previously-selected session — it was the one the user
-        # just detached from and needs a fresh snapshot before the first render.
+        # Load state and tasks after import_orphan_sessions so PIDs are current.
         ui = load_state()
-        if ui.get("selected_task_id"):
-            from planner.db import list_tasks as _list_tasks
-            _tasks = _list_tasks(DB_PATH)
-            _sel = next((t for t in _tasks if t["id"] == ui["selected_task_id"]), None)
-            if _sel and _sel.get("screen_session"):
-                self._monitor.capture_now(_sel["screen_session"])
+        from planner.db import list_tasks as _list_tasks
+        _tasks = _list_tasks(DB_PATH)
+        # Immediately capture all sessions with active Claude conversations — they can
+        # be in any state (ACTIVE, NEEDS PERMISSION) regardless of cached idle status.
+        for _t in _tasks:
+            if _t.get("screen_session") and _t.get("claude_session_id"):
+                self._monitor.capture_now(_t["screen_session"])
         # Eager poll so session states are populated before first render
         self._monitor._poll()
         panel = self.query_one(TaskPanel)

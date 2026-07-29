@@ -124,12 +124,11 @@ class ScreenMonitor:
                          state=entry["state"], last_lines=entry["lines"])
             for fn, entry in cached.items()
         ]
-        # Restore idle-skip so sessions that were IDLE stay skipped after restart.
-        # The caller (app._startup_inner) must wake any session that needs re-analysis
-        # (e.g. the session the user just detached from) before the first eager poll.
+        # Restore idle-skip with a short delay rather than infinite — ensures sessions
+        # that were idle at shutdown still get re-checked within 120s of restart.
         for fn, entry in cached.items():
             if entry["state"] == "IDLE":
-                self._skip_until[fn] = float("inf")
+                self._skip_until[fn] = time.monotonic() + 120
 
     def start(self) -> None:
         self._running = True
@@ -155,10 +154,11 @@ class ScreenMonitor:
             lines = self._backend.capture(full_name)
         except Exception:
             return
+        # Always clear skip so the next poll can retry, even on empty capture.
+        self._skip_until.pop(full_name, None)
         if not any(l.strip() for l in lines):
             return
         self._snapshots[full_name] = (lines, now)
-        self._skip_until.pop(full_name, None)
         with self._lock:
             updated = []
             found = False
@@ -244,12 +244,11 @@ class ScreenMonitor:
             prev_state = prev_states.get(s.full_name, "")
             state = detect_state(lines, idle_secs, s.attached, self._idle_threshold, prev_state)
 
-            # Only skip capturing after IDLE_SKIP_CYCLES consecutive idle polls.
-            # This prevents missing a permission prompt that arrives shortly after
-            # a session goes idle — a single idle poll is not enough to skip.
-            # Idle sessions won't change spontaneously — skip until attach/detach wakes them.
+            # Reduce polling frequency for idle sessions — re-check every 120s rather
+            # than every poll interval. Never skip permanently: Claude can start a new
+            # turn (→ ACTIVE → NEEDS PERMISSION) on any session at any time.
             if state == "IDLE" and not s.attached:
-                self._skip_until[s.full_name] = float("inf")
+                self._skip_until[s.full_name] = now + 120
             elif s.full_name in self._skip_until:
                 del self._skip_until[s.full_name]
 
