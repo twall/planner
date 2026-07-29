@@ -61,8 +61,8 @@ def detect_state(lines: list[str], idle_seconds: float, attached: bool = False,
     # Avoids NEEDS PERMISSION → ACTIVE oscillation when capture races with mid-render content.
     if prev_state in ("NEEDS PERMISSION", "NEEDS INPUT"):
         non_blank = [l for l in lines if l.strip()]
-        footer = non_blank[-1] if non_blank else ""
-        if not _CLAUDE_FOOTER_RE.search(footer):
+        footer_text = "\n".join(non_blank[-3:]) if non_blank else ""
+        if not _CLAUDE_FOOTER_RE.search(footer_text):
             return prev_state
     if idle_seconds >= idle_threshold:
         return "IDLE"
@@ -73,10 +73,13 @@ def detect_state(lines: list[str], idle_seconds: float, attached: bool = False,
     # is present, return IDLE — avoids the ~30s false-ACTIVE window that occurs when a
     # just-finished turn or fresh ScreenMonitor start produces a one-time content diff.
     non_blank = [l for l in lines if l.strip()]
-    footer = non_blank[-1] if non_blank else ""
+    # Check last few non-blank lines — status bars (e.g. "11% until auto-compact") can
+    # appear below the Claude footer, pushing it off the [-1] position.
+    footer_candidates = non_blank[-3:] if non_blank else []
+    footer_text = "\n".join(footer_candidates)
     # "esc to interrupt" is the only reliable ACTIVE signal — present only during a turn.
     # Everything else (idle footer, unknown footer, empty) means not actively processing.
-    if _ACTIVE_FOOTER_RE.search(footer):
+    if _ACTIVE_FOOTER_RE.search(footer_text):
         return "ACTIVE"
     return "IDLE"
 
@@ -246,6 +249,8 @@ class ScreenMonitor:
             age = time.time() - hts
             if hstate == "ACTIVE" and age > 30:
                 continue  # stale active — ignore
+            if hstate in ("NEEDS PERMISSION", "NEEDS INPUT") and age > 600:
+                continue  # stale permission prompt — ignore after 10 min
             hook_by_session[full] = hstate
             # On any hook state transition, wake for immediate capture — content changed.
             if self._last_hook_state.get(full) != hstate:
