@@ -74,17 +74,12 @@ def detect_state(lines: list[str], idle_seconds: float, attached: bool = False,
     # is present, return IDLE — avoids the ~30s false-ACTIVE window that occurs when a
     # just-finished turn or fresh ScreenMonitor start produces a one-time content diff.
     non_blank = [l for l in lines if l.strip()]
-    if non_blank:
-        footer = non_blank[-1]
-        # Claude Code footer is present — use it to distinguish idle vs active.
-        # "esc to interrupt" appears only during an active turn; "? for shortcuts"
-        # appears when Claude is idle at the prompt. Without this check, a single
-        # content diff (e.g. from fresh _snapshots on planner restart) would keep
-        # ALL sessions ACTIVE for up to idle_threshold seconds.
-        if _CLAUDE_FOOTER_RE.search(footer):
-            if not _ACTIVE_FOOTER_RE.search(footer):
-                return "IDLE"
-    return "ACTIVE"
+    footer = non_blank[-1] if non_blank else ""
+    # "esc to interrupt" is the only reliable ACTIVE signal — present only during a turn.
+    # Everything else (idle footer, unknown footer, empty) means not actively processing.
+    if _ACTIVE_FOOTER_RE.search(footer):
+        return "ACTIVE"
+    return "IDLE"
 
 
 # Kept for backward compatibility (used in session_manager.py legacy path)
@@ -239,16 +234,21 @@ class ScreenMonitor:
         except Exception:
             pass
 
-        # Hook states: override detect_state when a hook has reported within the last 30s
+        # Hook states override detect_state. ACTIVE expires after 30s (stale active is
+        # misleading); IDLE/NEEDS PERMISSION/INPUT persist until overwritten by next hook.
         hook_states = _read_hook_states()
         hook_by_session: dict[str, str] = {}
         for cid, (hstate, hts) in hook_states.items():
             full = self._claude_id_to_session.get(cid)
-            if full and (time.time() - hts) < 30:
-                hook_by_session[full] = hstate
-                # Wake sessions that hooks say are non-idle
-                if hstate != "IDLE":
-                    self._skip_until.pop(full, None)
+            if not full:
+                continue
+            age = time.time() - hts
+            if hstate == "ACTIVE" and age > 30:
+                continue  # stale active — ignore
+            hook_by_session[full] = hstate
+            # Wake sessions that hooks say are non-idle so they get captured
+            if hstate != "IDLE":
+                self._skip_until.pop(full, None)
 
         # Skip capturing sessions confirmed idle for a long time.
         # Always capture: attached, just-detached, awaiting input/permission, hook-signaled.
