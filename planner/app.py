@@ -602,8 +602,12 @@ class PlannerApp(App):
 
     def _refresh_sessions(self) -> None:
         sessions = self._monitor.get_sessions()
-        self.query_one(TaskPanel).update_sessions(sessions)
-        selected = self.query_one(TaskPanel)._selected_task()
+        panel = self.query_one(TaskPanel)
+        panel.update_sessions(sessions)
+        # Re-read tasks from DB so screen_session fields stay current (e.g. after
+        # import_orphan_sessions updates a stale PID mid-run).
+        panel.refresh_tasks()
+        selected = panel._selected_task()
         if selected:
             from planner.session_manager import _bare_name
             ss = selected.get("screen_session")
