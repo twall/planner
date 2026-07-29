@@ -253,17 +253,33 @@ def import_orphan_sessions(db_path: Path) -> int:
         if t.get("screen_session") and "." in t["screen_session"]:
             bare_to_task[t["screen_session"].split(".", 1)[1]] = t
 
+    import os as _os
+    own_sty = _os.environ.get("STY", "")
+
+    # When multiple live sessions share a bare name, pick the preferred one (STY if present).
+    from collections import defaultdict
+    bare_to_live: dict[str, list[str]] = defaultdict(list)
+    for full_name in live:
+        bare_to_live[live[full_name]["name"]].append(full_name)
+    preferred_full: dict[str, str] = {
+        name: _prefer_sty(fns) for name, fns in bare_to_live.items()
+    }
+
     imported = 0
     for full_name, s in live.items():
         if full_name in linked_names:
             continue
         if s["name"] in linked_names:
-            # Bare name already linked — update DB if PID changed (e.g. after planner restart)
+            # Bare name already linked — update DB to preferred full_name for this bare name
             task = bare_to_task.get(s["name"])
-            if task and task.get("screen_session") != full_name:
-                update_task(db_path, task["id"], screen_session=full_name)
+            preferred = preferred_full.get(s["name"], full_name)
+            if task and task.get("screen_session") != preferred:
+                update_task(db_path, task["id"], screen_session=preferred)
             continue
         if s["name"] in ignored or full_name in ignored:
+            continue
+        # Never create a task for the planner's own session
+        if full_name == own_sty:
             continue
         # Try to relink a planner-owned session to its task by ID suffix
         relinked = _relink_by_id(db_path, s["name"], full_name, task_by_id)
@@ -276,6 +292,15 @@ def import_orphan_sessions(db_path: Path) -> int:
                  screen_session=full_name, horizon="this_week")
         imported += 1
     return imported
+
+
+def _prefer_sty(candidates: list[str]) -> str:
+    """From a list of full_names with the same bare name, prefer $STY if present."""
+    import os
+    own = os.environ.get("STY", "")
+    if own and own in candidates:
+        return own
+    return candidates[0]
 
 
 def _relink_by_id(db_path: Path, name: str, full_name: str,

@@ -8,8 +8,6 @@ from planner.backends.base import RawSession, SessionBackend
 
 class ScreenBackend(SessionBackend):
     def list_sessions(self) -> list[RawSession]:
-        import os
-        own = os.environ.get("STY", "")
         try:
             result = subprocess.run(["screen", "-ls"], capture_output=True, text=True, timeout=5)
         except Exception:
@@ -20,8 +18,6 @@ class ScreenBackend(SessionBackend):
             if m:
                 pid, name, status = m.group(1), m.group(2), m.group(3)
                 full_name = f"{pid}.{name}"
-                if full_name == own:
-                    continue
                 sessions.append(RawSession(name=name, full_name=full_name,
                                            attached=(status == "Attached")))
         return sessions
