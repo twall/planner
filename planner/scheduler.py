@@ -71,8 +71,9 @@ def import_tasks_to_db(db_path: Path, config_path: Path = TASKS_CONFIG_PATH) -> 
             continue
         task = db_tasks[rt.name]
         updates: dict = {}
-        # Always sync cwd from tasks.json so path renames take effect on restart
-        if rt.cwd and task.get("cwd") != rt.cwd:
+        # Always sync cwd from tasks.json so path renames take effect on restart,
+        # but only if the directory actually exists on this machine.
+        if rt.cwd and task.get("cwd") != rt.cwd and Path(rt.cwd).is_dir():
             updates["cwd"] = rt.cwd
         # Only import schedule fields if DB fields are still blank (don't overwrite user edits)
         if not task.get("rt_frequency"):

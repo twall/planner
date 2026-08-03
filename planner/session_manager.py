@@ -32,11 +32,7 @@ def ignore_session(name: str) -> None:
 SESSION_NAME_PREFIX = "task"
 
 
-def session_name_for(task_id: int, title: str | None = None) -> str:
-    if title:
-        import re
-        slug = re.sub(r'[^a-z0-9]+', '-', title.lower()).strip('-')[:30]
-        return f"{SESSION_NAME_PREFIX}-{task_id}-{slug}"
+def session_name_for(task_id: int, title: str | None = None) -> str:  # title arg kept for compat
     return f"{SESSION_NAME_PREFIX}-{task_id}"
 
 
@@ -199,10 +195,26 @@ def resume_sessions(db_path: Path) -> int:
     for t in tasks:
         if not t.get("claude_session_id"):
             continue
-        name = session_name_for(t["id"], t.get("title"))
+        name = session_name_for(t["id"])
+        id_prefix = f"{SESSION_NAME_PREFIX}-{t['id']}"
         stored = t.get("screen_session") or ""
         stored_bare = _bare_name(stored) if stored else ""
-        if name in live_names or stored in live_names or stored in live_full_names or stored_bare in live_names:
+        # Match by exact name, stored full/bare name, or any live session with same id prefix
+        already_live = (
+            name in live_names
+            or stored in live_names
+            or stored in live_full_names
+            or stored_bare in live_names
+            or any(n == id_prefix or n.startswith(id_prefix + "-") for n in live_names)
+        )
+        if already_live:
+            # Update stored name if it changed (e.g. old slug format → id-only)
+            matching = next((s for s in live.values()
+                             if s["name"] == name
+                             or s["name"] == stored_bare
+                             or s["name"].startswith(id_prefix)), None)
+            if matching and matching["full_name"] != stored:
+                update_task(db_path, t["id"], screen_session=matching["full_name"])
             continue
         shell_cmd = f"exec claude --resume {t['claude_session_id']}"
         launch_cwd = _resolve_cwd(t.get("cwd"))

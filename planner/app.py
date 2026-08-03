@@ -83,7 +83,7 @@ def _kill_stale_planner_screens() -> None:
             if s.attached or s.full_name == current_sty or s.name == current_name:
                 continue
             is_planner = re.fullmatch(r"planner-\d+", s.name)
-            is_task = re.fullmatch(r"task-\d+-.+", s.name)
+            is_task = re.fullmatch(r"task-\d+(-.*)?", s.name)
             if (is_planner or is_task) and s.full_name not in live:
                 backend.kill(s.full_name)
     except Exception:
@@ -580,6 +580,8 @@ class PlannerApp(App):
         from textual.worker import WorkerState
         if event.state in (WorkerState.SUCCESS, WorkerState.ERROR, WorkerState.CANCELLED):
             self.query_one("#loading").remove_class("visible")
+        if event.state == WorkerState.ERROR:
+            self.notify(f"Background task failed: {event.worker.error}", severity="error", timeout=15)
         if event.state == WorkerState.SUCCESS:
             self.query_one(TaskPanel).refresh_tasks()
             self._update_briefing()
