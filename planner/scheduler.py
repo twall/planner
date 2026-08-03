@@ -70,15 +70,21 @@ def import_tasks_to_db(db_path: Path, config_path: Path = TASKS_CONFIG_PATH) -> 
         if rt.name not in db_tasks:
             continue
         task = db_tasks[rt.name]
-        # Only import if DB fields are still blank (don't overwrite user edits)
-        needs_import = not task.get("rt_frequency")
-        if needs_import:
-            update_task(db_path, task["id"],
-                        rt_frequency=rt.frequency,
-                        rt_time=rt.time,
-                        rt_days=",".join(rt.days) if rt.days else None,
-                        rt_day=rt.day,
-                        rt_interval_hours=rt.interval_hours)
+        updates: dict = {}
+        # Always sync cwd from tasks.json so path renames take effect on restart
+        if rt.cwd and task.get("cwd") != rt.cwd:
+            updates["cwd"] = rt.cwd
+        # Only import schedule fields if DB fields are still blank (don't overwrite user edits)
+        if not task.get("rt_frequency"):
+            updates.update(
+                rt_frequency=rt.frequency,
+                rt_time=rt.time,
+                rt_days=",".join(rt.days) if rt.days else None,
+                rt_day=rt.day,
+                rt_interval_hours=rt.interval_hours,
+            )
+        if updates:
+            update_task(db_path, task["id"], **updates)
 
 
 def export_tasks_from_db(db_path: Path, config_path: Path = TASKS_CONFIG_PATH) -> None:

@@ -8,7 +8,7 @@
       "frequency": "daily",
       "time": "08:00",
       "days": ["mon", "tue", "wed", "thu", "fri"],
-      "cwd": "~/plex/search/ops"
+      "cwd": "~/plex/plex/ops"
     },
     {
       "name": "git",
@@ -17,7 +17,7 @@
       "frequency": "daily",
       "time": "08:00",
       "days": ["mon", "tue", "wed", "thu", "fri"],
-      "cwd": "~/plex/search/ops"
+      "cwd": "~/plex/plex/ops"
     },
     {
       "name": "sentry",
@@ -25,7 +25,7 @@
       "prompt": "Check configured Sentry projects (see sentry_projects in settings.json) for recent issues (last 24h).\nThen check configured Slack channels for the same time window.\nReport ONLY issues present in Sentry but NOT mentioned in Slack (alerting dropouts).\nOutput format — first a SUMMARY line, then a TASKS: section:\n- <task title> (<today|this_week|backlog>, priority <1-5>)\nIf no gaps found, output: No Sentry alerting gaps found.",
       "frequency": "daily",
       "time": "09:00",
-      "cwd": "~/plex/search/ops"
+      "cwd": "~/plex/plex/ops"
     }
   ]
 }

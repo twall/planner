@@ -54,6 +54,7 @@ class TaskPanel(Widget):
         self._db_path = db_path
         self._tasks: list[dict] = []
         self._selected_id: int | None = None
+        self._desired_id: int | None = None  # sticky restore target; cleared on explicit user nav
         self._session_states: dict[str, SessionState] = {}
         self._show_done: bool = False
 
@@ -111,6 +112,8 @@ class TaskPanel(Widget):
         ))
 
     def refresh_tasks(self) -> None:
+        import traceback, sys
+        caller = ''.join(traceback.format_stack()[-3:-1]).strip().replace('\n', ' | ')
         prev_ids = [t["id"] for t in self._tasks]
         all_tasks = list_tasks(self._db_path)
         if self._show_done:
@@ -121,17 +124,24 @@ class TaskPanel(Widget):
             filtered = [t for t in all_tasks if t["status"] != "done"]
         self._tasks = self._sort_tasks(filtered)
         task_ids = {t["id"] for t in self._tasks}
+        before = self._selected_id
         if not self._tasks:
             self._selected_id = None
+        elif self._desired_id is not None and self._desired_id in task_ids:
+            # Restore saved selection — task is now visible
+            self._selected_id = self._desired_id
+            self._desired_id = None
         elif self._selected_id not in task_ids:
             # Selected task gone (or never set) — move to neighbour by prior position
             old_idx = prev_ids.index(self._selected_id) if self._selected_id in prev_ids else 0
             clamped = min(old_idx, len(self._tasks) - 1)
             self._selected_id = self._tasks[clamped]["id"]
         # else: _selected_id still valid, keep it
+        print(f"[refresh_tasks] desired={self._desired_id} before={before} after={self._selected_id} | {caller}", file=sys.stderr)
         self._render_tasks()
 
     def select_by_id(self, task_id: int) -> None:
+        self._desired_id = None  # explicit select clears restore target
         ids = {t["id"] for t in self._tasks}
         if task_id in ids:
             self._selected_id = task_id
@@ -199,6 +209,7 @@ class TaskPanel(Widget):
     def action_move_cursor_down(self) -> None:
         if not self._tasks:
             return
+        self._desired_id = None
         idx = self._cursor_idx()
         self._selected_id = self._tasks[(idx + 1) % len(self._tasks)]["id"]
         self._render_tasks()
@@ -206,6 +217,7 @@ class TaskPanel(Widget):
     def action_move_cursor_up(self) -> None:
         if not self._tasks:
             return
+        self._desired_id = None
         idx = self._cursor_idx()
         self._selected_id = self._tasks[(idx - 1) % len(self._tasks)]["id"]
         self._render_tasks()

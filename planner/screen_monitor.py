@@ -141,6 +141,7 @@ class ScreenMonitor:
         self._claude_id_to_session: dict[str, str] = {}
         # Last seen hook state per session — detect transitions to trigger fresh capture
         self._last_hook_state: dict[str, str] = {}
+        self._first_poll = False
         from planner.backends import get_backend
         self._backend = get_backend()
         # Seed display with cached states from previous run; first poll overwrites.
@@ -152,11 +153,19 @@ class ScreenMonitor:
                          state=entry["state"], last_lines=entry["lines"])
             for fn, entry in cached.items()
         ]
+        # Seed snapshots so empty hardcopy falls back to cached lines, not [].
+        t0 = time.monotonic()
+        for fn, entry in cached.items():
+            if entry.get("lines"):
+                self._snapshots[fn] = (entry["lines"], t0)
         # Restore idle-skip with a short delay rather than infinite — ensures sessions
         # that were idle at shutdown still get re-checked within 120s of restart.
+        # Do NOT skip on first poll: planner may have been down while a permission
+        # prompt appeared, so we must scan all sessions once before deferring idle ones.
         for fn, entry in cached.items():
             if entry["state"] == "IDLE":
                 self._skip_until[fn] = time.monotonic() + 120
+        self._first_poll = True
 
     def start(self) -> None:
         self._running = True
@@ -269,7 +278,10 @@ class ScreenMonitor:
                       if s.attached or s.full_name in just_detached
                       or prev_states.get(s.full_name, "") in needs_response
                       or s.full_name in hook_by_session
+                      or self._first_poll  # scan all sessions once on startup
                       or now >= self._skip_until.get(s.full_name, 0)]
+
+        self._first_poll = False
 
         # Capture eligible sessions in parallel — sequential screen hardcopy is ~400ms each
         captures: dict[str, list[str]] = {}
@@ -308,8 +320,12 @@ class ScreenMonitor:
             state = detect_state(lines, idle_secs, s.attached, self._idle_threshold, prev_state)
 
             # Hook state takes precedence — it's directly reported by Claude Code.
+            # Exception: hook IDLE must not override screen-detected permission/input prompts,
+            # since the Stop hook fires just before Claude renders the permission dialog.
             if s.full_name in hook_by_session:
-                state = hook_by_session[s.full_name]
+                hstate = hook_by_session[s.full_name]
+                if not (hstate == "IDLE" and state in ("NEEDS PERMISSION", "NEEDS INPUT")):
+                    state = hstate
 
             # Reduce polling frequency for idle sessions — re-check every 120s rather
             # than every poll interval. Never skip permanently: Claude can start a new

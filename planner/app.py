@@ -566,9 +566,9 @@ class PlannerApp(App):
         self._monitor._poll()
         panel = self.query_one(TaskPanel)
         panel.update_sessions(self._monitor.get_sessions())
-        panel.refresh_tasks()
         if ui.get("selected_task_id"):
-            panel.select_by_id(ui["selected_task_id"])
+            panel._desired_id = ui["selected_task_id"]
+        panel.refresh_tasks()
         self.query_one("#loading").add_class("visible")
         self.run_worker(self._scheduler.run_all_due, thread=True, name="startup")
 
@@ -740,6 +740,8 @@ class PlannerApp(App):
 
     def on_task_edit_pane_task_saved(self, event: TaskEditPane.TaskSaved) -> None:
         self.query_one(TaskPanel).refresh_tasks()
+        from planner.scheduler import export_tasks_from_db
+        export_tasks_from_db(DB_PATH)
         self.notify("Saved")
         tasks = list_tasks(DB_PATH)
         task = next((t for t in tasks if t["id"] == event.task_id), None)
