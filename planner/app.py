@@ -69,19 +69,23 @@ def _purge_stale_planner_session_tasks(db_path: Path) -> None:
 
 
 def _kill_stale_planner_screens() -> None:
-    """Kill detached planner-N screen sessions left over from previous runs."""
+    """Kill detached planner-managed screen sessions not tracked in the DB."""
     import re
     import os
     from planner.backends import get_backend
-    # Avoid killing the screen session we're currently running inside (if any)
-    current_sty = os.environ.get("STY", "")  # screen sets STY=pid.name
+    from planner.db import list_tasks
+    current_sty = os.environ.get("STY", "")
     current_name = current_sty.split(".", 1)[1] if "." in current_sty else current_sty
     try:
+        live = {t["screen_session"] for t in list_tasks(DB_PATH) if t.get("screen_session")}
         backend = get_backend()
         for s in backend.list_sessions():
-            if re.fullmatch(r"planner-\d+", s.name) and not s.attached:
-                if s.name != current_name and s.full_name != current_sty:
-                    backend.kill(s.full_name)
+            if s.attached or s.full_name == current_sty or s.name == current_name:
+                continue
+            is_planner = re.fullmatch(r"planner-\d+", s.name)
+            is_task = re.fullmatch(r"task-\d+-.+", s.name)
+            if (is_planner or is_task) and s.full_name not in live:
+                backend.kill(s.full_name)
     except Exception:
         pass
 
