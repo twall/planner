@@ -8,6 +8,14 @@ from planner.config import IGNORED_SESSIONS_PATH
 from planner.db import add_task, list_tasks, update_task
 
 
+def _resolve_cwd(raw: str | None) -> str | None:
+    """Expand and validate a cwd path; return None if missing so launch falls back to home."""
+    if not raw:
+        return None
+    p = Path(raw).expanduser()
+    return str(p) if p.is_dir() else None
+
+
 def load_ignored_sessions() -> set[str]:
     try:
         return set(json.loads(IGNORED_SESSIONS_PATH.read_text()))
@@ -145,7 +153,7 @@ def launch_session(db_path: Path, task: dict, cwd: str | None = None,
     if label:
         import shlex
         shell_cmd += f" --name {shlex.quote(label)}"
-    effective_launch_cwd = str(Path(cwd).expanduser()) if cwd else None
+    effective_launch_cwd = _resolve_cwd(cwd)
     backend.launch(name, shell_cmd, cwd=effective_launch_cwd, cols=cols, rows=rows)
     # full_name differs by backend: screen uses PID.name, tmux uses name
     # Resolve by looking up the just-created session
@@ -197,8 +205,7 @@ def resume_sessions(db_path: Path) -> int:
         if name in live_names or stored in live_names or stored in live_full_names or stored_bare in live_names:
             continue
         shell_cmd = f"exec claude --resume {t['claude_session_id']}"
-        raw = t.get("cwd") or None
-        launch_cwd = str(Path(raw).expanduser()) if raw else None
+        launch_cwd = _resolve_cwd(t.get("cwd"))
         backend.launch(name, shell_cmd, cwd=launch_cwd)
         full_name = _resolve_full_name(backend, name) or name
         update_task(db_path, t["id"], screen_session=full_name)
@@ -212,8 +219,7 @@ def resume_session(db_path: Path, task: dict, cwd: str | None = None,
     backend = get_backend()
     task_id = task["id"]
     session_id = task["claude_session_id"]
-    raw_cwd = cwd or task.get("cwd") or None
-    effective_cwd = str(Path(raw_cwd).expanduser()) if raw_cwd else None
+    effective_cwd = _resolve_cwd(cwd or task.get("cwd"))
     name = session_name_for(task_id, task.get("title"))
     shell_cmd = f"exec claude --resume {session_id}"
     backend.launch(name, shell_cmd, cwd=effective_cwd, cols=cols, rows=rows)
