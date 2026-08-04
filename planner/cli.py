@@ -262,6 +262,26 @@ def main(argv: list[str] | None = None) -> int:
         state_file.write_text(json.dumps({"state": state, "ts": _time.time()}))
         return 0
 
+    elif command == "clear-session":
+        # clear-session --session-id <claude_session_id>
+        # Called from the Stop hook to clear stale session references when claude exits.
+        session_id = None
+        i = 0
+        while i < len(rest):
+            if rest[i] == "--session-id" and i + 1 < len(rest):
+                session_id = rest[i + 1]; i += 2
+            else:
+                i += 1
+        if not session_id:
+            print("Usage: planner.cli clear-session --session-id <id>", file=sys.stderr)
+            return 1
+        from planner.db import update_task
+        tasks = list_tasks(DB_PATH)
+        matched = [t for t in tasks if t.get("claude_session_id") == session_id]
+        for t in matched:
+            update_task(DB_PATH, t["id"], claude_session_id=None, screen_session=None)
+        return 0
+
     elif command == "export":
         from planner.scheduler import export_tasks_from_db
         export_tasks_from_db(DB_PATH)
