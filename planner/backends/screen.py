@@ -24,8 +24,13 @@ class ScreenBackend(SessionBackend):
 
     def launch(self, name: str, shell_cmd: str, cwd: str | None = None,
                cols: int = 220, rows: int = 50) -> None:
-        # Wrap in bash to set terminal size before exec'ing the target command
-        wrapped = f"stty cols {cols} rows {rows}; {shell_cmd}"
+        # Trap ERR so the screen session stays open on failure instead of silently dying.
+        # EXIT is intentionally excluded — normal exit (after claude exits) should close cleanly.
+        wrapped = (
+            f"stty cols {cols} rows {rows}; "
+            f"trap 'echo \"[planner] session failed (exit $?) — press Enter to close\"; read' ERR; "
+            f"{shell_cmd}"
+        )
         subprocess.run(
             ["screen", "-S", name, "-dm", "bash", "-c", wrapped],
             timeout=10, cwd=cwd

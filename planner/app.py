@@ -959,6 +959,34 @@ class PlannerApp(App):
                     fn = lambda: launch_session(DB_PATH, task, cwd=cwd, cols=cols, rows=rows)
                 full_name = await loop.run_in_executor(None, fn)
                 if full_name:
+                    # Verify the session is still alive — resume may fail if session ID is stale
+                    def _wait_for_live(name: str, timeout: float = 8.0) -> bool:
+                        import time
+                        backend = get_backend()
+                        deadline = time.monotonic() + timeout
+                        while time.monotonic() < deadline:
+                            if any(s.full_name == name or s.name == name
+                                   for s in backend.list_sessions()):
+                                return True
+                            time.sleep(0.3)
+                        return False
+                    alive = await loop.run_in_executor(None, _wait_for_live, full_name)
+                    if not alive and is_resume:
+                        # Stale claude_session_id — clear it and fall back to fresh session
+                        update_task(DB_PATH, task["id"], claude_session_id=None, screen_session=None)
+                        task["claude_session_id"] = None
+                        task["screen_session"] = None
+                        self.notify("Resume failed (stale session ID) — starting fresh…")
+                        full_name = await loop.run_in_executor(
+                            None, lambda: launch_session(DB_PATH, task, cwd=cwd, cols=cols, rows=rows)
+                        )
+                        alive = full_name and await loop.run_in_executor(None, _wait_for_live, full_name)
+                    if not alive:
+                        self.notify(
+                            f"Session failed to start — check cwd or claude install",
+                            severity="error",
+                        )
+                        return
                     self._snapshot()
                     self._monitor.stop()
                     self.exit(result=get_backend().attach_cmd(full_name))

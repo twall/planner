@@ -60,15 +60,19 @@ def _rename_claude_session(backend, full_name: str, title: str, jira_key: str | 
     backend.send_input(full_name, f"/rename {label}")
 
 
-def _send_commands(backend, full_name: str, text: str, auto_submit: bool = True) -> None:
-    """Populate prompt into the input buffer; submit only if auto_submit=True."""
+def _send_commands(backend, full_name: str, text: str, auto_submit: bool = True) -> bool:
+    """Populate prompt into the input buffer; submit only if auto_submit=True. Returns False if session never became ready."""
     lines = [l.strip() for l in text.split("\n") if l.strip()]
     prompt = " ".join(lines)
-    _wait_for_claude_ready(backend, full_name)
+    if not _wait_for_claude_ready(backend, full_name):
+        import logging
+        logging.getLogger(__name__).warning("Session %s never became ready; skipping prompt injection", full_name)
+        return False
     if auto_submit:
         backend.send_input(full_name, prompt)
     else:
         backend.send_raw(full_name, prompt)
+    return True
 
 
 def _session_has_prior_output(backend, full_name: str) -> bool:

@@ -50,7 +50,7 @@ def test_detect_state_idle():
 
 
 def test_detect_state_active():
-    lines = ["some output", "some more output"]
+    lines = ["some output", "esc to interrupt"]
     assert detect_state(lines, idle_seconds=10) == "ACTIVE"
 
 
@@ -77,6 +77,7 @@ def test_detect_state_claude_active_footer_returns_active():
 
 
 def test_detect_state_non_claude_session_still_active_on_content_change():
-    # Non-Claude terminal (no Claude footer): content change = ACTIVE
+    # Without "esc to interrupt" footer, recent content change still returns IDLE
+    # (footer check prevents false-ACTIVE from stale screen captures)
     lines = ["$ some bash output", "result here"]
-    assert detect_state(lines, idle_seconds=5) == "ACTIVE"
+    assert detect_state(lines, idle_seconds=5) == "IDLE"
