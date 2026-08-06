@@ -21,12 +21,18 @@ _CLAUDE_FOOTER_RE = re.compile(r'for shortcuts|for agents|manual mode|accept edi
 # Active turn only — absent when idle, in diff review, or any non-processing state.
 # Also matches streaming content indicators visible during a turn.
 _ACTIVE_FOOTER_RE = re.compile(r'esc to interrupt', re.IGNORECASE)
-# Content patterns that are only present during an active turn (streaming output, tool calls).
-# Must be unambiguous — these strings don't appear in completed-turn scrollback.
-_ACTIVE_CONTENT_RE = re.compile(
+# Patterns present above the Claude footer during an active turn — disappear when idle.
+# Gated on idle_seconds < threshold (update frequently, so stale = turn done).
+_ACTIVE_STREAMING_RE = re.compile(
     r'↓\s*[\d.,]+k?\s*tokens'        # streaming token counter "↓ 1.6k tokens"
-    r'|Bootstrapping…'               # agent subagent startup
-    r'|\bRunning…\b',                # "Running…" tool execution (exact, not "1 shell still running")
+    r'|Cooking…',                    # model streaming "✽ Cooking… (17s · ↓ N tokens)"
+    re.IGNORECASE
+)
+# Patterns visible during long-running tool execution (screen static for minutes).
+# Checked unconditionally — these strings don't appear in completed-turn scrollback.
+_ACTIVE_EXEC_RE = re.compile(
+    r'Bootstrapping…'                # agent subagent startup
+    r'|\bRunning…\b',               # tool execution spinner (not "1 shell still running")
     re.IGNORECASE
 )
 
@@ -81,10 +87,12 @@ def detect_state(lines: list[str], idle_seconds: float, attached: bool = False,
     footer_text = "\n".join(footer_candidates)
     if _ACTIVE_FOOTER_RE.search(footer_text):
         return "ACTIVE"
-    # Streaming content indicators persist on screen during a turn even when output
-    # has paused (idle_seconds climbs). Check unconditionally like the footer.
     recent_text = "\n".join(non_blank[-10:]) if non_blank else ""
-    if _ACTIVE_CONTENT_RE.search(recent_text):
+    # Streaming indicators update frequently — only trust them if screen changed recently.
+    if idle_seconds < idle_threshold and _ACTIVE_STREAMING_RE.search(recent_text):
+        return "ACTIVE"
+    # Execution indicators persist through long silent tool runs — check unconditionally.
+    if _ACTIVE_EXEC_RE.search(recent_text):
         return "ACTIVE"
     if idle_seconds >= idle_threshold:
         return "IDLE"

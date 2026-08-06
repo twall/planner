@@ -457,6 +457,7 @@ class PlannerApp(App):
         Binding("s", "run_slack", "Slack digest"),
         Binding("R", "run_all", "Run all"),
         Binding("r", "rerun_task", "Re-run"),
+        Binding("x", "reconnect_session", "Reconnect", show=False),
         Binding("i", "ignore_session", "Ignore session", show=True),
         Binding("shift+enter", "accept_permission", "Accept", show=False),
         Binding("u", "upgrade", "Upgrade", show=False),
@@ -541,6 +542,7 @@ class PlannerApp(App):
             "run_bitbucket": ("PRs", True),
             "run_slack": ("Slack digest", True),
             "run_all": ("Run all", True),
+            "reconnect_session": ("Reconnect", False),
             "show_help": ("Help", False),
             "quit": ("Quit", True),
             "cursor_down": ("Down", False),
@@ -781,6 +783,26 @@ class PlannerApp(App):
         if not task or task.get("source") not in RECURRING_SOURCES:
             return
         self._run_task_by_id(task["id"])
+
+    def action_reconnect_session(self) -> None:
+        """Kill and resume the selected task's session to pick up latest hook/settings config."""
+        task = self.query_one(TaskPanel)._selected_task()
+        if not task or not task.get("claude_session_id"):
+            self.notify("No resumable session for this task.", severity="warning")
+            return
+        session = task.get("screen_session")
+
+        def _do_reconnect() -> None:
+            from planner.session_manager import kill_session, resume_session
+            if session:
+                kill_session(session)
+            full_name = resume_session(DB_PATH, task)
+            self.call_from_thread(self._monitor.wake, full_name)
+            self.call_from_thread(self.query_one(TaskPanel).refresh_tasks)
+            self.call_from_thread(self.notify, f"Reconnected: {task['title']}")
+
+        self.run_worker(_do_reconnect, thread=True)
+        self.notify(f"Reconnecting {task['title']}…")
 
     def on_task_panel_task_selected(self, event: TaskPanel.TaskSelected) -> None:
         task = event.task
