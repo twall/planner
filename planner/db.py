@@ -120,6 +120,22 @@ def upsert_jira_task(db_path: Path, jira_key: str, title: str, description: str,
             )
 
 
+def delete_old_done_tasks(db_path: Path, days: int = 30, dry_run: bool = False) -> list[dict]:
+    """Hard-delete done tasks whose updated_at is older than `days` days. Returns deleted rows."""
+    with _conn(db_path) as conn:
+        rows = conn.execute(
+            "SELECT * FROM tasks WHERE status = 'done' AND updated_at < datetime('now', ?)",
+            (f"-{days} days",)
+        ).fetchall()
+        deleted = [dict(r) for r in rows]
+        if not dry_run and deleted:
+            ids = [r["id"] for r in deleted]
+            conn.execute(
+                f"DELETE FROM tasks WHERE id IN ({','.join('?' * len(ids))})", ids
+            )
+    return deleted
+
+
 def get_last_run(db_path: Path, task_name: str) -> str | None:
     with _conn(db_path) as conn:
         row = conn.execute(

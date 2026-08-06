@@ -317,6 +317,55 @@ class ProjectPickerModal(ModalScreen[str | None]):
         self.dismiss(path if path else None)
 
 
+class MergeTaskModal(ModalScreen[int | None]):
+    """Pick a target task to merge the current task into."""
+
+    CSS = """
+    MergeTaskModal {
+        align: center middle;
+    }
+    #merge-box {
+        width: 80;
+        height: auto;
+        max-height: 80%;
+        border: solid $accent;
+        padding: 1 2;
+        background: $surface;
+    }
+    #merge-list {
+        height: auto;
+        max-height: 24;
+        margin-top: 1;
+    }
+    """
+
+    BINDINGS = [("escape", "dismiss", "Cancel")]
+
+    def __init__(self, tasks: list[dict]):
+        super().__init__()
+        self._tasks = tasks
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="merge-box"):
+            yield Label("[bold]Merge into…[/bold]  [dim]↑↓ navigate · enter select · esc cancel[/dim]")
+            items = []
+            for t in self._tasks:
+                label = t["title"]
+                if t.get("jira_key"):
+                    label = f"{t['jira_key']}: {label}"
+                horizon = t.get("horizon", "")
+                badge = {"today": "[green]today[/green]", "this_week": "[yellow]week[/yellow]"}.get(horizon, "[dim]backlog[/dim]")
+                items.append(ListItem(Label(f"{badge} #{t['id']} {label}"), id=f"merge-{t['id']}"))
+            yield ListView(*items, id="merge-list")
+
+    def on_mount(self) -> None:
+        self.query_one(ListView).focus()
+
+    def on_list_view_selected(self, event: ListView.Selected) -> None:
+        task_id = int(event.item.id.split("-", 1)[1])
+        self.dismiss(task_id)
+
+
 class ConfirmDeleteModal(ModalScreen[bool]):
     """Confirm killing a live session before deleting a task."""
 
@@ -402,6 +451,7 @@ class PlannerApp(App):
         Binding("n", "new_task", "New task"),
         Binding("d", "mark_done", "Delete"),
         Binding("m", "move_horizon", "Move horizon"),
+        Binding("M", "merge_task", "Merge"),
         Binding("j", "sync_jira", "Sync JIRA"),
         Binding("b", "run_bitbucket", "PRs"),
         Binding("s", "run_slack", "Slack digest"),
@@ -811,6 +861,78 @@ class PlannerApp(App):
     def action_move_horizon(self) -> None:
         self.query_one(TaskPanel).action_move_horizon()
 
+    def action_merge_task(self) -> None:
+        source = self.query_one(TaskPanel)._selected_task()
+        if not source:
+            return
+        all_tasks = list_tasks(DB_PATH, status="open")
+        candidates = [t for t in all_tasks if t["id"] != source["id"]]
+        if not candidates:
+            self.notify("No other open tasks to merge into.", severity="warning")
+            return
+
+        def _on_target(target_id: int | None) -> None:
+            if target_id is None:
+                return
+            target = next((t for t in candidates if t["id"] == target_id), None)
+            if not target:
+                return
+
+            from planner.session_manager import _live_sessions, _send_commands
+            from planner.backends import get_backend
+
+            source_title = source.get("title", f"task {source['id']}")
+            source_session = source.get("screen_session")
+            target_session = target.get("screen_session")
+            live = _live_sessions()
+
+            def _is_live(name: str | None) -> bool:
+                return bool(name and any(
+                    s["name"] == name or s["full_name"] == name for s in live.values()
+                ))
+
+            def _do_merge() -> None:
+                backend = get_backend()
+                if _is_live(source_session):
+                    # Source is active — ask it to hand off to the target
+                    if _is_live(target_session):
+                        msg = (f"Please summarize your analysis and send it to task "
+                               f"'{target['title']}' (id {target['id']}) using: "
+                               f"python3 -m planner.cli send-message --to {target['id']} "
+                               f"--message \"<your summary>\" --submit")
+                    else:
+                        msg = (f"Please summarize your findings. The target task "
+                               f"'{target['title']}' (id {target['id']}) has no active session; "
+                               f"update its description using: "
+                               f"python3 -m planner.cli update {target['id']} --desc \"<summary>\"")
+                    _send_commands(backend, source_session, msg, auto_submit=True)
+                else:
+                    # No active source session — inject a note into the target's input buffer
+                    note = f"Include '{source_title}' in this analysis."
+                    if _is_live(target_session):
+                        _send_commands(backend, target_session, note, auto_submit=False)
+                    else:
+                        # Neither session live — append to target description
+                        existing = (target.get("description") or "").strip()
+                        new_desc = f"{existing}\n\n{note}".strip() if existing else note
+                        update_task(DB_PATH, target["id"], description=new_desc)
+
+                # Mark source done regardless
+                if source_session:
+                    from planner.session_manager import kill_session
+                    kill_session(source_session)
+                update_task(DB_PATH, source["id"],
+                            status="done", screen_session=None, claude_session_id=None)
+                self.call_from_thread(self.query_one(TaskPanel).refresh_tasks)
+                self.call_from_thread(
+                    self.notify,
+                    f"Merged '{source_title}' → '{target['title']}'"
+                )
+
+            self.run_worker(_do_merge, thread=True)
+
+        self.push_screen(MergeTaskModal(candidates), _on_target)
+
     def action_new_task(self) -> None:
         from planner.db import add_task
 
@@ -967,7 +1089,10 @@ class PlannerApp(App):
                         while time.monotonic() < deadline:
                             if any(s.full_name == name or s.name == name
                                    for s in backend.list_sessions()):
-                                return True
+                                # Seen once — re-check after 1s to catch fast-exit (e.g. stale --resume)
+                                time.sleep(1.0)
+                                return any(s.full_name == name or s.name == name
+                                           for s in backend.list_sessions())
                             time.sleep(0.3)
                         return False
                     alive = await loop.run_in_executor(None, _wait_for_live, full_name)

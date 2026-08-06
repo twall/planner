@@ -99,6 +99,9 @@ python -m planner.cli <command>
 | `add "title" [--today\|--week\|--backlog] [--priority N]` | Add task directly to DB |
 | `inbox add "title" [--desc "..."] [--today\|--week\|--backlog]` | Queue for next planner launch |
 | `update <id> [--today\|--week\|--backlog] [--priority N] [--title "..."] [--desc "..."]` | Update task |
+| `delete <id>` | Mark task done and kill its session |
+| `send-message --to <id\|title> --message "..." [--submit]` | Send text to another task's live session; `--submit` presses Enter immediately |
+| `cleanup [--days N] [--dry-run]` | Hard-delete done tasks closed >N days ago (default 30); `--dry-run` previews |
 
 ---
 
@@ -106,18 +109,13 @@ python -m planner.cli <command>
 
 ### Session flashes and returns to planner
 
-`claude --resume <session_id>` failed — session ID is stale (no backing `.jsonl` in `~/.claude/projects/`). Fix:
+`claude --resume <session_id>` failed — session ID is stale. On startup, planner auto-detects this (polls for 5s, clears ID if session dies), then starts fresh on next Enter. If it persists, clear manually:
 
 ```bash
-python3 -c "
-import sys; sys.path.insert(0, '$HOME/planner')
-from planner.db import update_task
-from planner.config import DB_PATH
-update_task(DB_PATH, <task_id>, claude_session_id=None, screen_session=None)
-"
+python -m planner.cli update <id> --clear-session
+# or directly:
+python -m planner.cli clear-session --session-id <claude_session_id>
 ```
-
-Then relaunch — planner starts a fresh session.
 
 ### Session shows as dead even though it's running
 

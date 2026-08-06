@@ -37,16 +37,28 @@ class TmuxBackend(SessionBackend):
                        capture_output=True, timeout=5)
 
     def send_input(self, full_name: str, text: str) -> None:
-        subprocess.run(
-            ["tmux", "send-keys", "-t", full_name, text, "Enter"],
-            capture_output=True, timeout=5
-        )
+        try:
+            subprocess.run(
+                ["tmux", "send-keys", "-t", full_name, text, "Enter"],
+                capture_output=True, timeout=5
+            )
+        except subprocess.TimeoutExpired:
+            import logging
+            logging.getLogger(__name__).warning(
+                "send_input timeout on session %s — session may be unresponsive", full_name
+            )
 
     def send_raw(self, full_name: str, text: str) -> None:
-        subprocess.run(
-            ["tmux", "send-keys", "-t", full_name, text],
-            capture_output=True, timeout=5
-        )
+        try:
+            subprocess.run(
+                ["tmux", "send-keys", "-t", full_name, text],
+                capture_output=True, timeout=5
+            )
+        except subprocess.TimeoutExpired:
+            import logging
+            logging.getLogger(__name__).warning(
+                "send_raw timeout on session %s — session may be unresponsive", full_name
+            )
 
     def attach_cmd(self, full_name: str) -> str:
         return f"tmux attach -t {full_name}"

@@ -64,23 +64,17 @@ def detect_state(lines: list[str], idle_seconds: float, attached: bool = False,
         footer_text = "\n".join(non_blank[-3:]) if non_blank else ""
         if not _CLAUDE_FOOTER_RE.search(footer_text):
             return prev_state
-    if idle_seconds >= idle_threshold:
-        return "IDLE"
-    # Content recently changed (idle_seconds < threshold), but check whether Claude is
-    # actually processing. Screen hardcopy pads to full terminal height with blank lines,
-    # so inspect non-blank lines only. The footer line distinguishes idle ("? for shortcuts")
-    # from active ("esc to interrupt"). If the footer is idle and no active-turn indicator
-    # is present, return IDLE — avoids the ~30s false-ACTIVE window that occurs when a
-    # just-finished turn or fresh ScreenMonitor start produces a one-time content diff.
+    # Check for "esc to interrupt" before the idle_seconds gate — a long-running turn
+    # stops changing the screen (idle_seconds climbs past threshold) but the footer stays.
     non_blank = [l for l in lines if l.strip()]
-    # Check last few non-blank lines — status bars (e.g. "11% until auto-compact") can
-    # appear below the Claude footer, pushing it off the [-1] position.
     footer_candidates = non_blank[-3:] if non_blank else []
     footer_text = "\n".join(footer_candidates)
-    # "esc to interrupt" is the only reliable ACTIVE signal — present only during a turn.
-    # Everything else (idle footer, unknown footer, empty) means not actively processing.
     if _ACTIVE_FOOTER_RE.search(footer_text):
         return "ACTIVE"
+    if idle_seconds >= idle_threshold:
+        return "IDLE"
+    # Content recently changed but no active footer — avoid the ~30s false-ACTIVE window
+    # after a just-finished turn or fresh ScreenMonitor start.
     return "IDLE"
 
 
@@ -327,11 +321,11 @@ class ScreenMonitor:
                 if not (hstate == "IDLE" and state in ("NEEDS PERMISSION", "NEEDS INPUT")):
                     state = hstate
 
-            # Reduce polling frequency for idle sessions — re-check every 120s rather
-            # than every poll interval. Never skip permanently: Claude can start a new
-            # turn (→ ACTIVE → NEEDS PERMISSION) on any session at any time.
+            # Reduce polling frequency for idle sessions — re-check every 30s rather
+            # than every poll interval. Kept short so ACTIVE is never missed by more
+            # than one check cycle when hooks aren't firing.
             if state == "IDLE" and not s.attached:
-                self._skip_until[s.full_name] = now + 120
+                self._skip_until[s.full_name] = now + 30
             elif s.full_name in self._skip_until:
                 del self._skip_until[s.full_name]
 

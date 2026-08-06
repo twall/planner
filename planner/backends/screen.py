@@ -1,9 +1,12 @@
+import logging
 import re
 import subprocess
 import time
 from pathlib import Path
 
 from planner.backends.base import RawSession, SessionBackend
+
+_log = logging.getLogger(__name__)
 
 
 class ScreenBackend(SessionBackend):
@@ -41,19 +44,26 @@ class ScreenBackend(SessionBackend):
                        capture_output=True, timeout=5)
 
     def send_input(self, full_name: str, text: str) -> None:
-        subprocess.run(
-            ["screen", "-S", full_name, "-X", "stuff", text + "\r"],
-            capture_output=True, timeout=5
-        )
+        try:
+            subprocess.run(
+                ["screen", "-S", full_name, "-X", "stuff", text + "\r"],
+                capture_output=True, timeout=5
+            )
+        except subprocess.TimeoutExpired:
+            _log.warning("send_input timeout on session %s — session may be unresponsive", full_name)
 
     def send_raw(self, full_name: str, text: str) -> None:
         # screen 'stuff' truncates at ~200 chars; chunk to avoid silent truncation
         chunk_size = 150
         for i in range(0, len(text), chunk_size):
-            subprocess.run(
-                ["screen", "-S", full_name, "-X", "stuff", text[i:i + chunk_size]],
-                capture_output=True, timeout=5
-            )
+            try:
+                subprocess.run(
+                    ["screen", "-S", full_name, "-X", "stuff", text[i:i + chunk_size]],
+                    capture_output=True, timeout=5
+                )
+            except subprocess.TimeoutExpired:
+                _log.warning("send_raw timeout on session %s at offset %d — aborting", full_name, i)
+                break
             if i + chunk_size < len(text):
                 time.sleep(0.05)
 

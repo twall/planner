@@ -223,7 +223,34 @@ def resume_sessions(db_path: Path) -> int:
         shell_cmd = f"exec claude --resume {t['claude_session_id']}"
         launch_cwd = _resolve_cwd(t.get("cwd"))
         backend.launch(name, shell_cmd, cwd=launch_cwd)
-        full_name = _resolve_full_name(backend, name) or name
+        # Poll up to 5s to confirm the session survived (--resume fails fast on stale IDs)
+        deadline = time.monotonic() + 5.0
+        full_name = None
+        while time.monotonic() < deadline:
+            full_name = _resolve_full_name(backend, name)
+            if full_name:
+                break
+            time.sleep(0.3)
+        if not full_name:
+            # Session never appeared or died immediately — stale session ID; clear it
+            import logging
+            logging.getLogger(__name__).warning(
+                "resume_sessions: session %s never became live; clearing stale ID for task %d",
+                name, t["id"]
+            )
+            update_task(db_path, t["id"], claude_session_id=None, screen_session=None)
+            continue
+        # Verify it's still alive a moment later (fast failures exit before we can attach)
+        time.sleep(1.0)
+        still_live = _resolve_full_name(backend, name)
+        if not still_live:
+            import logging
+            logging.getLogger(__name__).warning(
+                "resume_sessions: session %s died after launch; clearing stale ID for task %d",
+                name, t["id"]
+            )
+            update_task(db_path, t["id"], claude_session_id=None, screen_session=None)
+            continue
         update_task(db_path, t["id"], screen_session=full_name)
         resumed += 1
     return resumed

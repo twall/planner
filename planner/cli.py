@@ -31,6 +31,16 @@ Commands:
   delete <id>
       Delete a task by id (marks it done and kills its session if running).
 
+  send-message --to <id|title> --message "..."  [--submit]
+      Send a message to another task's live session.
+      --to        Target task id (integer) or title substring (case-insensitive).
+      --message   Text to inject into the target session's input buffer.
+      --submit    Also press Enter to submit immediately (default: populate only).
+
+  cleanup [--days N] [--dry-run]
+      Hard-delete done tasks closed more than N days ago (default: 30).
+      --dry-run   List what would be deleted without removing anything.
+
   export
       Write recurring session schedule fields from DB back to sessions.json.
 
@@ -280,6 +290,90 @@ def main(argv: list[str] | None = None) -> int:
         matched = [t for t in tasks if t.get("claude_session_id") == session_id]
         for t in matched:
             update_task(DB_PATH, t["id"], claude_session_id=None, screen_session=None)
+        return 0
+
+    elif command == "send-message":
+        # send-message --to <id|title> --message "..." [--submit]
+        to = None
+        message = None
+        submit = False
+        i = 0
+        while i < len(rest):
+            if rest[i] == "--to" and i + 1 < len(rest):
+                to = rest[i + 1]; i += 2
+            elif rest[i] == "--message" and i + 1 < len(rest):
+                message = rest[i + 1]; i += 2
+            elif rest[i] == "--submit":
+                submit = True; i += 1
+            else:
+                i += 1
+        if not to or not message:
+            print("Usage: planner.cli send-message --to <id|title> --message \"...\" [--submit]",
+                  file=sys.stderr)
+            return 1
+        tasks = list_tasks(DB_PATH, status="open")
+        # Resolve target: integer id or case-insensitive title substring
+        target = None
+        if to.isdigit():
+            target = next((t for t in tasks if t["id"] == int(to)), None)
+        if target is None:
+            to_lower = to.lower()
+            matches = [t for t in tasks if to_lower in (t.get("title") or "").lower()]
+            if len(matches) > 1:
+                print(f"Error: '{to}' matches multiple tasks: "
+                      + ", ".join(f"{t['id']} ({t['title']})" for t in matches),
+                      file=sys.stderr)
+                return 1
+            target = matches[0] if matches else None
+        if target is None:
+            print(f"Error: no task found matching '{to}'", file=sys.stderr)
+            return 1
+        screen_session = target.get("screen_session")
+        if not screen_session:
+            print(f"Error: task {target['id']} ({target['title']!r}) has no screen session",
+                  file=sys.stderr)
+            return 1
+        from planner.backends import get_backend
+        from planner.session_manager import _live_sessions, _send_commands
+        live = _live_sessions()
+        if not any(s["name"] == screen_session or s["full_name"] == screen_session
+                   for s in live.values()):
+            print(f"Error: session '{screen_session}' for task {target['id']} is not running",
+                  file=sys.stderr)
+            return 1
+        backend = get_backend()
+        ok = _send_commands(backend, screen_session, message, auto_submit=submit)
+        if not ok:
+            print(f"Error: session '{screen_session}' never became ready", file=sys.stderr)
+            return 1
+        print(f"Message sent to task {target['id']} ({target['title']!r})")
+        return 0
+
+    elif command == "cleanup":
+        days = 30
+        dry_run = False
+        i = 0
+        while i < len(rest):
+            if rest[i] == "--days" and i + 1 < len(rest):
+                try:
+                    days = int(rest[i + 1])
+                except ValueError:
+                    print(f"Error: --days must be an integer", file=sys.stderr)
+                    return 1
+                i += 2
+            elif rest[i] == "--dry-run":
+                dry_run = True; i += 1
+            else:
+                i += 1
+        from planner.db import delete_old_done_tasks
+        deleted = delete_old_done_tasks(DB_PATH, days=days, dry_run=dry_run)
+        if not deleted:
+            print(f"No done tasks older than {days} days.")
+            return 0
+        label = "Would delete" if dry_run else "Deleted"
+        print(f"{label} {len(deleted)} task(s) closed more than {days} days ago:")
+        for t in deleted:
+            print(f"  #{t['id']} [{t['updated_at'][:10]}] {t['title']}")
         return 0
 
     elif command == "export":
