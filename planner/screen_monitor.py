@@ -18,8 +18,17 @@ PROMPT_PATTERNS = [
 # Claude Code footer: present in all Claude sessions (idle, active, diff review, etc.)
 # Matches both "? for shortcuts" (idle at prompt, including while typing) and "for agents"
 _CLAUDE_FOOTER_RE = re.compile(r'for shortcuts|for agents|manual mode|accept edits', re.IGNORECASE)
-# Active turn only — absent when idle, in diff review, or any non-processing state
+# Active turn only — absent when idle, in diff review, or any non-processing state.
+# Also matches streaming content indicators visible during a turn.
 _ACTIVE_FOOTER_RE = re.compile(r'esc to interrupt', re.IGNORECASE)
+# Content patterns that are only present during an active turn (streaming output, tool calls).
+# Must be unambiguous — these strings don't appear in completed-turn scrollback.
+_ACTIVE_CONTENT_RE = re.compile(
+    r'↓\s*[\d.,]+k?\s*tokens'        # streaming token counter "↓ 1.6k tokens"
+    r'|Bootstrapping…'               # agent subagent startup
+    r'|\bRunning…\b',                # "Running…" tool execution (exact, not "1 shell still running")
+    re.IGNORECASE
+)
 
 PERMISSION_PATTERNS = [
     # Claude Code permission UI — require the trailing ? to avoid matching content diffs/configs
@@ -64,17 +73,21 @@ def detect_state(lines: list[str], idle_seconds: float, attached: bool = False,
         footer_text = "\n".join(non_blank[-3:]) if non_blank else ""
         if not _CLAUDE_FOOTER_RE.search(footer_text):
             return prev_state
-    # Check for "esc to interrupt" before the idle_seconds gate — a long-running turn
-    # stops changing the screen (idle_seconds climbs past threshold) but the footer stays.
+    # Check for active signals before the idle_seconds gate — a long-running turn
+    # stops changing the screen (idle_seconds climbs past threshold) but active
+    # indicators remain visible. Check both footer and recent content.
     non_blank = [l for l in lines if l.strip()]
     footer_candidates = non_blank[-3:] if non_blank else []
     footer_text = "\n".join(footer_candidates)
     if _ACTIVE_FOOTER_RE.search(footer_text):
         return "ACTIVE"
+    # Streaming content indicators persist on screen during a turn even when output
+    # has paused (idle_seconds climbs). Check unconditionally like the footer.
+    recent_text = "\n".join(non_blank[-10:]) if non_blank else ""
+    if _ACTIVE_CONTENT_RE.search(recent_text):
+        return "ACTIVE"
     if idle_seconds >= idle_threshold:
         return "IDLE"
-    # Content recently changed but no active footer — avoid the ~30s false-ACTIVE window
-    # after a just-finished turn or fresh ScreenMonitor start.
     return "IDLE"
 
 
