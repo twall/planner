@@ -139,6 +139,8 @@ KEYMAP_TEXT = """\
  d        Delete session (and kill session if any)
  D        Toggle show completed disposable sessions
  m        Move session horizon (today → this week)
+ M        Merge session into another (hand off analysis, mark source done)
+ x        Reconnect session (kill + resume, reloads hooks/settings)
  j        Sync JIRA
  b        Re-run PR review
  s        Re-run Slack digest
