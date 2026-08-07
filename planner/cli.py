@@ -328,19 +328,26 @@ def main(argv: list[str] | None = None) -> int:
         if target is None:
             print(f"Error: no task found matching '{to}'", file=sys.stderr)
             return 1
-        screen_session = target.get("screen_session")
-        if not screen_session:
-            print(f"Error: task {target['id']} ({target['title']!r}) has no screen session",
-                  file=sys.stderr)
-            return 1
         from planner.backends import get_backend
-        from planner.session_manager import _live_sessions, _send_commands
+        from planner.session_manager import _live_sessions, _send_commands, launch_session, resume_session
+        from pathlib import Path as _Path
+
+        screen_session = target.get("screen_session")
         live = _live_sessions()
-        if not any(s["name"] == screen_session or s["full_name"] == screen_session
-                   for s in live.values()):
-            print(f"Error: session '{screen_session}' for task {target['id']} is not running",
-                  file=sys.stderr)
-            return 1
+        is_live = screen_session and any(
+            s["name"] == screen_session or s["full_name"] == screen_session
+            for s in live.values()
+        )
+        if not is_live:
+            # Launch or resume the target session, then wait for it to be ready
+            print(f"Session for task {target['id']} not running — launching…")
+            if target.get("claude_session_id"):
+                screen_session = resume_session(_Path(DB_PATH), target)
+            else:
+                screen_session = launch_session(_Path(DB_PATH), target, send_prompt=False)
+            if not screen_session:
+                print(f"Error: failed to launch session for task {target['id']}", file=sys.stderr)
+                return 1
         backend = get_backend()
         ok = _send_commands(backend, screen_session, message, auto_submit=submit)
         if not ok:
