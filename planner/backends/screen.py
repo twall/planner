@@ -46,7 +46,7 @@ class ScreenBackend(SessionBackend):
     def send_input(self, full_name: str, text: str) -> None:
         try:
             subprocess.run(
-                ["screen", "-S", full_name, "-X", "stuff", text + "\r"],
+                ["screen", "-S", full_name, "-p", "0", "-X", "stuff", text + "\r"],
                 capture_output=True, timeout=5
             )
         except subprocess.TimeoutExpired:
@@ -58,7 +58,7 @@ class ScreenBackend(SessionBackend):
         for i in range(0, len(text), chunk_size):
             try:
                 subprocess.run(
-                    ["screen", "-S", full_name, "-X", "stuff", text[i:i + chunk_size]],
+                    ["screen", "-S", full_name, "-p", "0", "-X", "stuff", text[i:i + chunk_size]],
                     capture_output=True, timeout=5
                 )
             except subprocess.TimeoutExpired:
@@ -74,7 +74,7 @@ class ScreenBackend(SessionBackend):
         tmp = f"/tmp/planner-screen-{full_name}.txt"
         try:
             subprocess.run(
-                ["screen", "-S", full_name, "-X", "hardcopy", tmp],
+                ["screen", "-S", full_name, "-p", "0", "-X", "hardcopy", tmp],
                 timeout=3, capture_output=True
             )
             return Path(tmp).read_text(errors="replace").splitlines()
