@@ -64,7 +64,9 @@ def _send_commands(backend, full_name: str, text: str, auto_submit: bool = True)
     """Populate prompt into the input buffer; submit only if auto_submit=True. Returns False if session never became ready."""
     lines = [l.strip() for l in text.split("\n") if l.strip()]
     prompt = " ".join(lines)
-    if not _wait_for_claude_ready(backend, full_name):
+    # Use the stricter blank-prompt check — ensures the prompt is empty and ready for
+    # input, not just that a ❯ char is visible (which can appear during startup banner).
+    if not _wait_for_blank_prompt(backend, full_name, timeout=20.0):
         import logging
         logging.getLogger(__name__).warning("Session %s never became ready; skipping prompt injection", full_name)
         return False
