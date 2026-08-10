@@ -306,6 +306,12 @@ class TaskEditPane(Widget):
             return
 
         if not self._editing:
+            if in_textarea and event.key in ("escape", "tab", "shift+tab", "enter"):
+                event.stop()
+                if event.key == "shift+tab":
+                    self.screen.focus_previous()
+                else:
+                    self.screen.focus_next()
             return
 
         if event.key == "ctrl+s":
