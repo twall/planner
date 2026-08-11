@@ -340,8 +340,6 @@ class TaskEditPane(Widget):
 
     def on_description_text_area_blur(self, event: DescriptionTextArea.Blur) -> None:
         event.stop()
-        if self._editing:
-            self._save()
         if event.forward:
             self.screen.focus_next()
         else:
