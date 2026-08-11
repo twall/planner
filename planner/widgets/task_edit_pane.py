@@ -1,5 +1,6 @@
 import subprocess
 from pathlib import Path
+from textual import events
 from textual.app import ComposeResult
 from textual.containers import Horizontal, Vertical
 from textual.message import Message
@@ -9,6 +10,48 @@ from textual.widgets import Button, Input, Label, Static, TextArea
 from planner.config import DB_PATH
 from planner.db import update_task
 from planner.scheduler import RECURRING_SOURCES
+
+
+class DescriptionTextArea(TextArea):
+    """TextArea that emits Accept on enter and Blur on tab when in edit mode."""
+
+    class Accept(Message):
+        pass
+
+    class Blur(Message):
+        def __init__(self, forward: bool = True):
+            super().__init__()
+            self.forward = forward
+
+    async def _on_key(self, event: events.Key) -> None:
+        if self.read_only:
+            if event.key in ("enter", "tab", "shift+tab", "escape"):
+                event.stop()
+                event.prevent_default()
+                if event.key == "shift+tab":
+                    self.screen.focus_previous()
+                else:
+                    self.screen.focus_next()
+            else:
+                await super()._on_key(event)
+            return
+        if event.key == "shift+enter":
+            event.stop()
+            event.prevent_default()
+            start, end = self.selection
+            self._replace_via_keyboard("\n", start, end)
+            return
+        if event.key == "enter":
+            event.stop()
+            event.prevent_default()
+            self.post_message(self.Accept())
+            return
+        if event.key in ("tab", "shift+tab"):
+            event.stop()
+            event.prevent_default()
+            self.post_message(self.Blur(forward=(event.key == "tab")))
+            return
+        await super()._on_key(event)
 
 
 class TaskEditPane(Widget):
@@ -85,7 +128,7 @@ class TaskEditPane(Widget):
             yield Label("Title")
             yield Input(placeholder="Session title", id="edit-title")
             yield Label("Description / Prompt")
-            yield TextArea("", id="edit-desc", soft_wrap=True)
+            yield DescriptionTextArea("", id="edit-desc", soft_wrap=True)
             yield Label("Working Directory")
             yield Input(placeholder="~/path/to/project  (blank = choose on start)", id="edit-cwd")
             yield Button("[ ] Use as Claude Code prompt", id="btn-is-prompt")
@@ -103,7 +146,7 @@ class TaskEditPane(Widget):
         self.query_one("#edit-form").display = False
         for btn_id in ("#btn-start", "#btn-disposable", "#btn-is-prompt"):
             self.query_one(btn_id, Button).can_focus = False
-        self.query_one("#edit-desc", TextArea).can_focus = False
+        self.query_one("#edit-desc", DescriptionTextArea).can_focus = False
 
     def show(self, task: dict | None, has_live_session: bool = False) -> None:
         self._current_task = task
@@ -132,7 +175,7 @@ class TaskEditPane(Widget):
             return
         self.query_one("#edit-title", Input).value = self._current_task.get("title", "")
         desc = self._current_task.get("description") or ""
-        ta = self.query_one("#edit-desc", TextArea)
+        ta = self.query_one("#edit-desc", DescriptionTextArea)
         ta.load_text(desc)
         self.query_one("#edit-cwd", Input).value = self._current_task.get("cwd") or ""
 
@@ -191,7 +234,7 @@ class TaskEditPane(Widget):
     def _set_fields_readonly(self, readonly: bool) -> None:
         for inp in self.query(Input):
             inp.disabled = readonly
-        ta = self.query_one("#edit-desc", TextArea)
+        ta = self.query_one("#edit-desc", DescriptionTextArea)
         ta.read_only = readonly
         ta.can_focus = True  # always focusable so user can select/copy text
 
@@ -239,7 +282,7 @@ class TaskEditPane(Widget):
             return
         tid = self._current_task["id"]
         title = self.query_one("#edit-title", Input).value.strip()
-        desc = self.query_one("#edit-desc", TextArea).text.strip()
+        desc = self.query_one("#edit-desc", DescriptionTextArea).text.strip()
         cwd_raw = self.query_one("#edit-cwd", Input).value.strip()
         cwd = str(Path(cwd_raw).expanduser()) if cwd_raw else ""
         disposable = int(bool(self._current_task.get("disposable")))
@@ -288,30 +331,43 @@ class TaskEditPane(Widget):
         elif event.input.id == "edit-interval":
             self._save()
 
+    def on_description_text_area_accept(self, event: DescriptionTextArea.Accept) -> None:
+        event.stop()
+        if self._editing:
+            self._save()
+        else:
+            self.screen.focus_next()
+
+    def on_description_text_area_blur(self, event: DescriptionTextArea.Blur) -> None:
+        event.stop()
+        if self._editing:
+            self._save()
+        if event.forward:
+            self.screen.focus_next()
+        else:
+            self.screen.focus_previous()
+
     def on_key(self, event) -> None:
         focused = self.app.focused
-        in_textarea = isinstance(focused, TextArea)
+        in_textarea = isinstance(focused, DescriptionTextArea)
 
         if event.key == "ctrl+y":
             event.stop()
-            text = self.query_one("#edit-desc", TextArea).text
+            text = self.query_one("#edit-desc", DescriptionTextArea).text
             self._copy_to_clipboard(text)
             self.app.notify("Prompt copied to clipboard", timeout=2)
             return
         if event.key in ("ctrl+c", "cmd+c") and in_textarea:
-            ta = self.query_one("#edit-desc", TextArea)
+            ta = self.query_one("#edit-desc", DescriptionTextArea)
             selected = ta.selected_text
             self._copy_to_clipboard(selected if selected else ta.text)
             event.stop()
             return
 
         if not self._editing:
-            if in_textarea and event.key in ("escape", "tab", "shift+tab", "enter"):
+            if in_textarea and event.key in ("escape",):
                 event.stop()
-                if event.key == "shift+tab":
-                    self.screen.focus_previous()
-                else:
-                    self.screen.focus_next()
+                self.screen.focus_next()
             return
 
         if event.key == "ctrl+s":
