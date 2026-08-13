@@ -156,6 +156,8 @@ class ScreenMonitor:
         self._claude_id_to_session: dict[str, str] = {}
         # Last seen hook state per session — detect transitions to trigger fresh capture
         self._last_hook_state: dict[str, str] = {}
+        # Last seen hook timestamp per session — detect new Stop hooks even with same state
+        self._last_hook_ts: dict[str, float] = {}
         self._first_poll = False
         from planner.backends import get_backend
         self._backend = get_backend()
@@ -277,9 +279,14 @@ class ScreenMonitor:
                 continue  # stale permission prompt — ignore after 10 min
             hook_by_session[full] = hstate
             # On any hook state transition, wake for immediate capture — content changed.
-            if self._last_hook_state.get(full) != hstate:
+            # Also wake on new IDLE hook (same state, new timestamp) — a skill may have
+            # just rendered an input prompt after the Stop hook fired.
+            prev_hstate = self._last_hook_state.get(full)
+            prev_hts = self._last_hook_ts.get(full, 0)
+            if prev_hstate != hstate or (hstate == "IDLE" and hts != prev_hts):
                 self._skip_until.pop(full, None)
                 self._last_hook_state[full] = hstate
+                self._last_hook_ts[full] = hts
             # Also wake non-idle sessions unconditionally
             elif hstate != "IDLE":
                 self._skip_until.pop(full, None)
