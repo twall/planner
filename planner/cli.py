@@ -1,10 +1,30 @@
 import json
 import sys
 from pathlib import Path
-from planner.config import DB_PATH, TASKS_CONFIG_PATH, HOOK_STATE_DIR
+from planner.config import DB_PATH, TASKS_CONFIG_PATH, HOOK_STATE_DIR, MESSAGE_QUEUE_PATH
 from planner.db import init_db, add_task, list_tasks
 
 INBOX_PATH = Path.home() / ".planner" / "inbox.json"
+
+
+def _enqueue_message(target_id: int, message: str, submit: bool, close_source_id: int | None = None) -> None:
+    """Append a pending message to the queue file for planner to deliver."""
+    import time as _time
+    MESSAGE_QUEUE_PATH.parent.mkdir(parents=True, exist_ok=True)
+    existing = []
+    if MESSAGE_QUEUE_PATH.exists():
+        try:
+            existing = json.loads(MESSAGE_QUEUE_PATH.read_text())
+        except Exception:
+            existing = []
+    existing.append({
+        "target_task_id": target_id,
+        "message": message,
+        "submit": submit,
+        "close_source_id": close_source_id,
+        "queued_at": _time.time(),
+    })
+    MESSAGE_QUEUE_PATH.write_text(json.dumps(existing, indent=2))
 
 
 HELP = """\
@@ -40,6 +60,11 @@ Commands:
   cleanup [--days N] [--dry-run]
       Hard-delete done tasks closed more than N days ago (default: 30).
       --dry-run   List what would be deleted without removing anything.
+
+  merge --into <id|title> --message "..."
+      Send a handoff message to another task's session and mark this task done.
+      --into      Target task id (integer) or title substring (case-insensitive).
+      --message   Handoff text to inject and submit into the target session.
 
   export
       Write recurring session schedule fields from DB back to sessions.json.
@@ -328,32 +353,62 @@ def main(argv: list[str] | None = None) -> int:
         if target is None:
             print(f"Error: no task found matching '{to}'", file=sys.stderr)
             return 1
-        from planner.backends import get_backend
-        from planner.session_manager import _live_sessions, _send_commands, launch_session, resume_session
-        from pathlib import Path as _Path
+        _enqueue_message(target["id"], message, submit)
+        print(f"Queued message for task {target['id']} ({target['title']!r})")
+        return 0
 
-        screen_session = target.get("screen_session")
-        live = _live_sessions()
-        is_live = screen_session and any(
-            s["name"] == screen_session or s["full_name"] == screen_session
-            for s in live.values()
-        )
-        if not is_live:
-            # Launch or resume the target session, then wait for it to be ready
-            print(f"Session for task {target['id']} not running — launching…")
-            if target.get("claude_session_id"):
-                screen_session = resume_session(_Path(DB_PATH), target)
+    elif command == "merge":
+        # merge --into <id|title> --message "..."
+        into = None
+        message = None
+        i = 0
+        while i < len(rest):
+            if rest[i] == "--into" and i + 1 < len(rest):
+                into = rest[i + 1]; i += 2
+            elif rest[i] == "--message" and i + 1 < len(rest):
+                message = rest[i + 1]; i += 2
             else:
-                screen_session = launch_session(_Path(DB_PATH), target, send_prompt=False)
-            if not screen_session:
-                print(f"Error: failed to launch session for task {target['id']}", file=sys.stderr)
-                return 1
-        backend = get_backend()
-        ok = _send_commands(backend, screen_session, message, auto_submit=submit)
-        if not ok:
-            print(f"Error: session '{screen_session}' never became ready", file=sys.stderr)
+                i += 1
+        if not into or not message:
+            print("Usage: planner.cli merge --into <id|title> --message \"...\"", file=sys.stderr)
             return 1
-        print(f"Message sent to task {target['id']} ({target['title']!r})")
+
+        # Resolve current task from env
+        import os as _os
+        current_session_id = _os.environ.get("CLAUDE_CODE_SESSION_ID")
+        all_tasks = list_tasks(DB_PATH)
+        current_task = None
+        if current_session_id:
+            current_task = next((t for t in all_tasks if t.get("claude_session_id") == current_session_id), None)
+
+        # Resolve target task
+        target = None
+        if into.isdigit():
+            target = next((t for t in all_tasks if t["id"] == int(into)), None)
+        if target is None:
+            into_lower = into.lower()
+            matches = [t for t in all_tasks if into_lower in (t.get("title") or "").lower()]
+            if len(matches) > 1:
+                print(f"Error: '{into}' matches multiple tasks: "
+                      + ", ".join(f"{t['id']} ({t['title']})" for t in matches),
+                      file=sys.stderr)
+                return 1
+            target = matches[0] if matches else None
+        if target is None:
+            print(f"Error: no task found matching '{into}'", file=sys.stderr)
+            return 1
+
+        from planner.db import update_task
+
+        close_id = current_task["id"] if current_task else None
+        _enqueue_message(target["id"], message, submit=True, close_source_id=close_id)
+        print(f"Queued merge into task {target['id']} ({target['title']!r})")
+
+        if current_task:
+            update_task(DB_PATH, current_task["id"], status="done", screen_session=None, claude_session_id=None)
+            print(f"Marked task {current_task['id']} ({current_task['title']!r}) done")
+        else:
+            print("Warning: could not identify current task — not marked done")
         return 0
 
     elif command == "cleanup":

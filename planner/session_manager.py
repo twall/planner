@@ -162,6 +162,8 @@ def resume_sessions(db_path: Path) -> int:
     for t in tasks:
         if not t.get("claude_session_id"):
             continue
+        if t.get("source") == "builtin":
+            continue
         name = session_name_for(t["id"])
         id_prefix = f"{SESSION_NAME_PREFIX}-{t['id']}"
         stored = t.get("screen_session") or ""
@@ -285,7 +287,7 @@ def import_orphan_sessions(db_path: Path) -> int:
             # Bare name already linked — update DB to preferred full_name for this bare name
             task = bare_to_task.get(s["name"])
             preferred = preferred_full.get(s["name"], full_name)
-            if task and task.get("screen_session") != preferred:
+            if task and task.get("source") != "builtin" and task.get("screen_session") != preferred:
                 update_task(db_path, task["id"], screen_session=preferred)
             continue
         if s["name"] in ignored or full_name in ignored:
@@ -325,6 +327,8 @@ def _relink_by_id(db_path: Path, name: str, full_name: str,
         return False
     task_id = int(m.group(1))
     if task_id not in task_by_id:
+        return False
+    if task_by_id[task_id].get("source") == "builtin":
         return False
     update_task(db_path, task_id, screen_session=full_name)
     return True

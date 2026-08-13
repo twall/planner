@@ -112,8 +112,6 @@ class TaskPanel(Widget):
         ))
 
     def refresh_tasks(self) -> None:
-        import traceback, sys
-        caller = ''.join(traceback.format_stack()[-3:-1]).strip().replace('\n', ' | ')
         prev_ids = [t["id"] for t in self._tasks]
         all_tasks = list_tasks(self._db_path)
         if self._show_done:
@@ -137,7 +135,6 @@ class TaskPanel(Widget):
             clamped = min(old_idx, len(self._tasks) - 1)
             self._selected_id = self._tasks[clamped]["id"]
         # else: _selected_id still valid, keep it
-        print(f"[refresh_tasks] desired={self._desired_id} before={before} after={self._selected_id} | {caller}", file=sys.stderr)
         self._render_tasks()
 
     def select_by_id(self, task_id: int) -> None:
@@ -183,8 +180,21 @@ class TaskPanel(Widget):
 
         content = "\n".join(lines) if lines else "[dim]No tasks.[/dim]"
         self.query_one("#task-list-content", Static).update(content)
-        self.scroll_to(y=cursor_line, animate=False)
+        self.scroll_to(y=self._visual_row(lines, cursor_line), animate=False)
         self._emit_selected()
+
+    def _visual_row(self, lines: list[str], target_idx: int) -> int:
+        """Convert line-list index to visual row, accounting for text wrapping."""
+        import re as _re
+        width = max(self.size.width, 1)
+        row = 0
+        for i, line in enumerate(lines):
+            if i == target_idx:
+                return row
+            # Strip Rich markup to get plain text length
+            plain = _re.sub(r'\[/?[^\]]*\]', '', line)
+            row += max(1, (len(plain) + width - 1) // width)
+        return row
 
     def _render_row(self, t: dict, is_cursor: bool) -> str:
         from planner.widgets.session_panel import STATE_COLORS

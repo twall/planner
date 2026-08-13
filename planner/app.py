@@ -11,7 +11,7 @@ from textual.containers import Horizontal, Vertical
 from textual.screen import ModalScreen
 from textual.widgets import Button, Footer, Input, Label, ListItem, ListView, LoadingIndicator, Static, TextArea
 
-from planner.config import DB_PATH, PLANNER_ROOT, SCREEN_POLL_INTERVAL
+from planner.config import DB_PATH, PLANNER_ROOT, SCREEN_POLL_INTERVAL, MESSAGE_QUEUE_PATH
 from planner.state import save_state, load_state
 from planner.db import init_db, list_tasks, update_task
 from planner.jira import JiraClient
@@ -23,6 +23,58 @@ from planner.widgets.status_bar import StatusBar
 from planner.widgets.task_detail_panel import RightPane
 from planner.widgets.task_edit_pane import TaskEditPane
 from planner.widgets.task_panel import TaskPanel
+
+
+def _drain_message_queue(idle_session_names: set[str], tasks_by_id: dict) -> list[dict]:
+    """Deliver queued messages whose target session is now idle. Returns undelivered entries."""
+    if not MESSAGE_QUEUE_PATH.exists():
+        return []
+    try:
+        entries = json.loads(MESSAGE_QUEUE_PATH.read_text())
+    except Exception:
+        return []
+    if not entries:
+        MESSAGE_QUEUE_PATH.unlink(missing_ok=True)
+        return []
+
+    remaining = []
+    from planner.backends import get_backend
+    from planner.session_manager import _live_sessions, _send_commands, launch_session, resume_session
+    backend = get_backend()
+
+    for entry in entries:
+        target = tasks_by_id.get(entry.get("target_task_id"))
+        if not target:
+            remaining.append(entry)
+            continue
+        screen_session = target.get("screen_session")
+        # Deliver only when target session is confirmed idle
+        bare = screen_session.split(".", 1)[1] if screen_session and "." in screen_session else screen_session
+        if not screen_session or (bare not in idle_session_names and screen_session not in idle_session_names):
+            # Not idle yet — keep queued; launch session if not running
+            live = _live_sessions()
+            is_live = screen_session and any(
+                s["name"] == screen_session or s["full_name"] == screen_session
+                for s in live.values()
+            )
+            if not is_live:
+                if target.get("claude_session_id"):
+                    resume_session(Path(DB_PATH), target)
+                else:
+                    launch_session(Path(DB_PATH), target, send_prompt=False)
+            remaining.append(entry)
+            continue
+
+        msg = entry.get("message", "")
+        if msg:
+            prefix = "/btw "
+            _send_commands(backend, screen_session, prefix + msg, auto_submit=entry.get("submit", True))
+
+    if remaining:
+        MESSAGE_QUEUE_PATH.write_text(json.dumps(remaining, indent=2))
+    else:
+        MESSAGE_QUEUE_PATH.unlink(missing_ok=True)
+    return remaining
 
 
 _SKILLS_SRC = Path(__file__).parent.parent / "skills"
@@ -668,6 +720,18 @@ class PlannerApp(App):
         # Re-read tasks from DB so screen_session fields stay current (e.g. after
         # import_orphan_sessions updates a stale PID mid-run).
         panel.refresh_tasks()
+
+        # Drain pending messages for sessions that are now idle
+        if MESSAGE_QUEUE_PATH.exists():
+            idle_names = {s.name for s in sessions if s.state == "IDLE"}
+            idle_names |= {s.full_name for s in sessions if s.state == "IDLE"}
+            all_tasks = list_tasks(DB_PATH)
+            tasks_by_id = {t["id"]: t for t in all_tasks}
+            self.run_worker(
+                lambda: _drain_message_queue(idle_names, tasks_by_id),
+                thread=True, name="drain-queue",
+            )
+
         selected = panel._selected_task()
         if selected:
             from planner.session_manager import _bare_name

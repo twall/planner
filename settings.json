@@ -1,8 +1,8 @@
 {
   "git_repos": [
-    "https://bitbucket.org/plexresearch/plex-search",
+    "https://bitbucket.org/plexresearch/rd",
     "https://bitbucket.org/plexresearch/plex-search-ui",
-    "https://bitbucket.org/plexresearch/rd"
+    "https://bitbucket.org/plexresearch/plex"
   ],
   "theme": "auto",
   "screen_poll_interval": 5,
