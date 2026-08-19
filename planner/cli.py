@@ -272,16 +272,19 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     elif command == "notify":
-        # notify --session-id <claude_session_id> --state <idle|active|needs-permission|needs-input>
+        # notify --session-id <claude_session_id> --state <state> [--screen-session <STY>]
         # Called from Claude Code hooks to push real-time state.
         session_id = None
         state = None
+        screen_session = None
         i = 0
         while i < len(rest):
             if rest[i] == "--session-id" and i + 1 < len(rest):
                 session_id = rest[i + 1]; i += 2
             elif rest[i] == "--state" and i + 1 < len(rest):
                 state = rest[i + 1]; i += 2
+            elif rest[i] == "--screen-session" and i + 1 < len(rest):
+                screen_session = rest[i + 1]; i += 2
             else:
                 i += 1
         if not session_id or not state:
@@ -295,6 +298,16 @@ def main(argv: list[str] | None = None) -> int:
         import time as _time
         state_file = HOOK_STATE_DIR / f"{session_id}.json"
         state_file.write_text(json.dumps({"state": state, "ts": _time.time()}))
+        # If a screen session is provided and this session_id isn't in the DB,
+        # update the matching screen_session task so the monitor can map hook → screen.
+        if screen_session:
+            from planner.db import update_task
+            tasks = list_tasks(DB_PATH)
+            known = {t["claude_session_id"] for t in tasks if t.get("claude_session_id")}
+            if session_id not in known:
+                matched = [t for t in tasks if t.get("screen_session") == screen_session]
+                for t in matched:
+                    update_task(DB_PATH, t["id"], claude_session_id=session_id)
         return 0
 
     elif command == "clear-session":
