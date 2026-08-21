@@ -5,15 +5,6 @@
       "name": "slack",
       "label": "Slack Digest",
       "prompt": "Read the configured Slack channels (see slack_channels in settings.json).\nSummarize new errors and alerts since the last check.\nOutput format \u2014 first a SUMMARY line, then a TASKS: section with one task per line:\n- <task title> (<today|this_week|backlog>, priority <1-5>)\nOnly output actionable tasks. If nothing new, output: No new issues found.",
-      "frequency": "daily",
-      "time": "08:00",
-      "days": [
-        "mon",
-        "tue",
-        "wed",
-        "thu",
-        "fri"
-      ],
       "cwd": "/Users/twall/plex/plex/ops"
     },
     {
