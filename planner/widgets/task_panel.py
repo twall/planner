@@ -180,20 +180,39 @@ class TaskPanel(Widget):
 
         content = "\n".join(lines) if lines else "[dim]No tasks.[/dim]"
         self.query_one("#task-list-content", Static).update(content)
-        self.scroll_to(y=self._visual_row(lines, cursor_line), animate=False)
+        self._scroll_to_cursor(self._visual_row(lines, cursor_line))
         self._emit_selected()
 
+    _SCROLL_MARGIN = 3
+
+    def _scroll_to_cursor(self, cursor_row: int) -> None:
+        """Scroll only when cursor enters the margin zone near top or bottom."""
+        viewport_h = max(self.size.height, 1)
+        current_y = self.scroll_y
+        top_margin = current_y + self._SCROLL_MARGIN
+        bottom_margin = current_y + viewport_h - self._SCROLL_MARGIN - 1
+        if cursor_row < top_margin:
+            self.scroll_to(y=cursor_row - self._SCROLL_MARGIN, animate=False)
+        elif cursor_row > bottom_margin:
+            self.scroll_to(y=cursor_row - viewport_h + self._SCROLL_MARGIN + 1, animate=False)
+
     def _visual_row(self, lines: list[str], target_idx: int) -> int:
-        """Convert line-list index to visual row, accounting for text wrapping."""
-        import re as _re
+        """Convert line-list index to visual row, accounting for text wrapping.
+
+        Uses Rich's own word-wrap to count rows — a naive char-count division
+        (len // width) undercounts whenever word-wrap breaks a line early,
+        which desyncs scroll targeting from the actual rendered position.
+        """
+        from rich.text import Text
         width = max(self.size.width, 1)
+        console = self.app.console
         row = 0
         for i, line in enumerate(lines):
             if i == target_idx:
                 return row
-            # Strip Rich markup to get plain text length
-            plain = _re.sub(r'\[/?[^\]]*\]', '', line)
-            row += max(1, (len(plain) + width - 1) // width)
+            text = Text.from_markup(line)
+            wrapped = console.render_lines(text, console.options.update(width=width))
+            row += max(1, len(wrapped))
         return row
 
     def _render_row(self, t: dict, is_cursor: bool) -> str:
