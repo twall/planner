@@ -202,9 +202,13 @@ class TaskPanel(Widget):
         Uses Rich's own word-wrap to count rows — a naive char-count division
         (len // width) undercounts whenever word-wrap breaks a line early,
         which desyncs scroll targeting from the actual rendered position.
+
+        Wraps at the Static child's own width, not the panel's — the vertical
+        scrollbar eats columns from the content region, so self.size.width is
+        wider than what the Static actually wraps against.
         """
         from rich.text import Text
-        width = max(self.size.width, 1)
+        width = max(self.query_one("#task-list-content", Static).size.width, 1)
         console = self.app.console
         row = 0
         for i, line in enumerate(lines):
