@@ -54,10 +54,23 @@ def _session_label(task: dict) -> str:
     return label[:60].strip()
 
 
-def _rename_claude_session(backend, full_name: str, title: str, jira_key: str | None = None) -> None:
-    """Send /rename <title> to set the Claude session name."""
+def _rename_claude_session(backend, full_name: str, title: str, jira_key: str | None = None) -> bool:
+    """Send /rename <title> to set the Claude session name.
+
+    Waits for the composer to be ready first — firing this blind can race
+    the initial task-description injection from launch_session and land
+    as unsubmitted garbage in front of it (or clobber it) instead of
+    actually renaming anything.
+    """
+    if not _wait_for_claude_ready(backend, full_name):
+        import logging
+        logging.getLogger(__name__).warning(
+            "_rename_claude_session: session %s never became ready; skipping rename", full_name
+        )
+        return False
     label = _session_label({"title": title, "jira_key": jira_key})
     backend.send_input(full_name, f"/rename {label}")
+    return True
 
 
 def _send_commands(backend, full_name: str, text: str, auto_submit: bool = True) -> bool:
