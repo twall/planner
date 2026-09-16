@@ -105,7 +105,7 @@ def _dismiss_trust_dialog(backend, full_name: str, lines: list[str]) -> bool:
     return True
 
 
-def _wait_for_claude_ready(backend, full_name: str, timeout: float = 40.0) -> bool:
+def _wait_for_claude_ready(backend, full_name: str, timeout: float = 60.0) -> bool:
     """Poll screen capture until claude's idle input prompt (❯) is visible. Returns True if ready."""
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:

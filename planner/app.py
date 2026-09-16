@@ -1237,7 +1237,7 @@ class PlannerApp(App):
             self.run_worker(_do_launch_and_attach)
             verb = "Resuming" if is_resume else "Starting"
             self.notify(
-                f"{verb} session for {task['title']}… may take up to 40s to seed the prompt before attaching",
+                f"{verb} session for {task['title']}… may take up to 60s to seed the prompt before attaching",
                 timeout=8,
             )
 
