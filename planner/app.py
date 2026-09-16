@@ -1162,6 +1162,12 @@ class PlannerApp(App):
             from planner.backends import get_backend
 
             async def _do_launch_and_attach() -> None:
+                try:
+                    await _do_launch_and_attach_inner()
+                except Exception as e:
+                    self.notify(f"Launch failed: {e}", severity="error", timeout=10)
+
+            async def _do_launch_and_attach_inner() -> None:
                 import asyncio, time as _time
                 loop = asyncio.get_event_loop()
                 if is_resume:
