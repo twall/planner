@@ -1169,6 +1169,7 @@ class PlannerApp(App):
                     logging.getLogger(__name__).exception(
                         "Launch failed for task %s", task.get("id")
                     )
+                    self.query_one("#loading").remove_class("visible")
                     self.notify(f"Launch failed: {e}", severity="error", timeout=10)
 
             async def _do_launch_and_attach_inner() -> None:
@@ -1217,6 +1218,7 @@ class PlannerApp(App):
                             )
                         alive = full_name and await loop.run_in_executor(None, _wait_for_live, full_name)
                     if not alive:
+                        self.query_one("#loading").remove_class("visible")
                         self.notify(
                             f"Session failed to start — check cwd or claude install",
                             severity="error",
@@ -1224,11 +1226,16 @@ class PlannerApp(App):
                         return
                     self._snapshot()
                     self._monitor.stop()
+                    self.query_one("#loading").remove_class("visible")
                     self.exit(result=get_backend().attach_cmd(full_name))
 
+            self.query_one("#loading").add_class("visible")
             self.run_worker(_do_launch_and_attach)
             verb = "Resuming" if is_resume else "Starting"
-            self.notify(f"{verb} session for {task['title']}…")
+            self.notify(
+                f"{verb} session for {task['title']}… may take up to 40s to seed the prompt before attaching",
+                timeout=8,
+            )
 
         saved_cwd = task.get("cwd")
         if saved_cwd:
