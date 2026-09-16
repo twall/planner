@@ -1167,7 +1167,13 @@ class PlannerApp(App):
                     fn = lambda: resume_session(DB_PATH, task, cwd=cwd, cols=cols, rows=rows)
                 else:
                     fn = lambda: launch_session(DB_PATH, task, cwd=cwd, cols=cols, rows=rows)
-                full_name = await loop.run_in_executor(None, fn)
+                result = await loop.run_in_executor(None, fn)
+                full_name, prompt_sent = result if isinstance(result, tuple) else (result, True)
+                if full_name and not prompt_sent:
+                    self.notify(
+                        f"Prompt not sent for {task['title']} — session never became ready; type it manually",
+                        severity="warning",
+                    )
                 if full_name:
                     # Verify the session is still alive — resume may fail if session ID is stale
                     def _wait_for_live(name: str, timeout: float = 8.0) -> bool:
@@ -1190,9 +1196,14 @@ class PlannerApp(App):
                         task["claude_session_id"] = None
                         task["screen_session"] = None
                         self.notify("Resume failed (stale session ID) — starting fresh…")
-                        full_name = await loop.run_in_executor(
+                        full_name, prompt_sent = await loop.run_in_executor(
                             None, lambda: launch_session(DB_PATH, task, cwd=cwd, cols=cols, rows=rows)
                         )
+                        if full_name and not prompt_sent:
+                            self.notify(
+                                f"Prompt not sent for {task['title']} — session never became ready; type it manually",
+                                severity="warning",
+                            )
                         alive = full_name and await loop.run_in_executor(None, _wait_for_live, full_name)
                     if not alive:
                         self.notify(

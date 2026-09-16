@@ -105,8 +105,14 @@ def _input_buffer_has_text(backend, full_name: str) -> bool:
 
 def launch_session(db_path: Path, task: dict, cwd: str | None = None,
                    cols: int = 220, rows: int = 50,
-                   send_prompt: bool = True) -> str:
-    """Launch a multiplexer session + claude for task. Returns session full_name."""
+                   send_prompt: bool = True) -> tuple[str, bool]:
+    """Launch a multiplexer session + claude for task.
+
+    Returns (session full_name, prompt_sent). prompt_sent is True whenever
+    no prompt injection was attempted or requested; False only if injection
+    was attempted (prompt present, send_prompt/is_prompt set) but failed,
+    e.g. because the session never became ready in time.
+    """
     backend = get_backend()
     task_id = task["id"]
     name = session_name_for(task_id, task.get("title"))
@@ -128,9 +134,16 @@ def launch_session(db_path: Path, task: dict, cwd: str | None = None,
     is_prompt = task.get("is_prompt", 1)
     if is_prompt is None:
         is_prompt = 1
+    prompt_sent = True
     if send_prompt and task.get("description") and bool(int(is_prompt)):
-        _send_commands(backend, full_name, task["description"], auto_submit=False)
-    return full_name
+        prompt_sent = _send_commands(backend, full_name, task["description"], auto_submit=False)
+        if not prompt_sent:
+            import logging
+            logging.getLogger(__name__).error(
+                "launch_session: prompt injection failed for task %d (session %s never became ready)",
+                task_id, full_name,
+            )
+    return full_name, prompt_sent
 
 
 def _resolve_full_name(backend, name: str) -> str | None:
@@ -350,5 +363,5 @@ def run_recurring_via_session(db_path: Path, task_dict: dict, prompt: str,
                 return
             _send_commands(backend, name, prompt, auto_submit=auto_submit)
             return
-    full_name = launch_session(db_path, task_dict, send_prompt=False)
+    full_name, _ = launch_session(db_path, task_dict, send_prompt=False)
     _send_commands(backend, full_name, prompt, auto_submit=auto_submit)
