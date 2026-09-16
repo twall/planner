@@ -1186,6 +1186,9 @@ class PlannerApp(App):
                         f"Prompt not sent for {task['title']} — session never became ready; type it manually",
                         severity="warning",
                     )
+                    # Give the toast time to actually be seen — attach (self.exit) tears
+                    # down the TUI moments later otherwise, and it's gone unread.
+                    await asyncio.sleep(6)
                 if full_name:
                     # Verify the session is still alive — resume may fail if session ID is stale
                     def _wait_for_live(name: str, timeout: float = 8.0) -> bool:
@@ -1216,6 +1219,7 @@ class PlannerApp(App):
                                 f"Prompt not sent for {task['title']} — session never became ready; type it manually",
                                 severity="warning",
                             )
+                            await asyncio.sleep(6)
                         alive = full_name and await loop.run_in_executor(None, _wait_for_live, full_name)
                     if not alive:
                         self.query_one("#loading").remove_class("visible")
