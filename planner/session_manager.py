@@ -105,12 +105,28 @@ def _dismiss_trust_dialog(backend, full_name: str, lines: list[str]) -> bool:
     return True
 
 
+def _is_blocking_menu(lines: list[str]) -> bool:
+    """True if an interactive picker/dialog is showing (not the real composer).
+
+    Any modal or selection list (trust dialog, AskUserQuestion-style pickers,
+    etc.) uses the same leading '❯' cursor glyph as the real composer prompt.
+    Only the trust dialog has a universally safe default we can auto-answer
+    (_dismiss_trust_dialog); anything else must not be mistaken for ready —
+    stuffing text into a live decision menu could select the wrong option.
+    """
+    text = "\n".join(lines)
+    return "Enter to select" in text or "Enter to confirm" in text
+
+
 def _wait_for_claude_ready(backend, full_name: str, timeout: float = 60.0) -> bool:
     """Poll screen capture until claude's idle input prompt (❯) is visible. Returns True if ready."""
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         lines = backend.capture(full_name)
         if _dismiss_trust_dialog(backend, full_name, lines):
+            time.sleep(0.5)
+            continue
+        if _is_blocking_menu(lines):
             time.sleep(0.5)
             continue
         # Match only lines where ❯ or > appears as the prompt char (start of a non-indented line)
@@ -168,13 +184,25 @@ def launch_session(db_path: Path, task: dict, cwd: str | None = None,
         is_prompt = 1
     prompt_sent = True
     if send_prompt and task.get("description") and bool(int(is_prompt)):
-        prompt_sent = _send_commands(backend, full_name, task["description"], auto_submit=False)
-        if not prompt_sent:
-            import logging
-            logging.getLogger(__name__).error(
-                "launch_session: prompt injection failed for task %d (session %s never became ready)",
-                task_id, full_name,
+        # Don't block attach on this: the composer becoming ready can take
+        # well past a minute (e.g. MCP server connect stalls), and the
+        # parent process exits at attach anyway, so there's no in-process
+        # way to keep waiting past that point. Seed it from a detached
+        # subprocess that outlives us and keeps trying independently.
+        import subprocess
+        import sys
+        try:
+            subprocess.Popen(
+                [sys.executable, "-m", "planner.inject_prompt", full_name, task["description"]],
+                start_new_session=True,
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
             )
+        except Exception:
+            import logging
+            logging.getLogger(__name__).exception(
+                "launch_session: failed to dispatch background prompt injection for task %d", task_id
+            )
+            prompt_sent = False
     return full_name, prompt_sent
 
 

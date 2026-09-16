@@ -1183,7 +1183,7 @@ class PlannerApp(App):
                 full_name, prompt_sent = result if isinstance(result, tuple) else (result, True)
                 if full_name and not prompt_sent:
                     self.notify(
-                        f"Prompt not sent for {task['title']} — session never became ready; type it manually",
+                        f"Could not dispatch prompt seeding for {task['title']} — type it manually",
                         severity="warning",
                     )
                     # Give the toast time to actually be seen — attach (self.exit) tears
@@ -1216,7 +1216,7 @@ class PlannerApp(App):
                         )
                         if full_name and not prompt_sent:
                             self.notify(
-                                f"Prompt not sent for {task['title']} — session never became ready; type it manually",
+                                f"Could not dispatch prompt seeding for {task['title']} — type it manually",
                                 severity="warning",
                             )
                             await asyncio.sleep(6)
@@ -1237,7 +1237,7 @@ class PlannerApp(App):
             self.run_worker(_do_launch_and_attach)
             verb = "Resuming" if is_resume else "Starting"
             self.notify(
-                f"{verb} session for {task['title']}… may take up to 60s to seed the prompt before attaching",
+                f"{verb} session for {task['title']}…",
                 timeout=8,
             )
 
