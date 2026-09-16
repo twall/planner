@@ -76,11 +76,30 @@ def _send_commands(backend, full_name: str, text: str, auto_submit: bool = True)
 
 
 
+def _dismiss_trust_dialog(backend, full_name: str, lines: list[str]) -> bool:
+    """If claude's workspace-trust dialog is showing, select 'Yes, I trust this folder' and confirm.
+
+    The dialog's own menu cursor ('❯ No, exit') starts with the same '❯' char
+    _wait_for_claude_ready looks for, so it must be dismissed rather than
+    mistaken for the real input prompt.
+    """
+    text = "\n".join(lines)
+    if "trust this folder" not in text.lower() or "Enter to confirm" not in text:
+        return False
+    backend.send_raw(full_name, "\x1b[B")  # Down: "No, exit" -> "Yes, I trust this folder"
+    time.sleep(0.15)
+    backend.send_input(full_name, "")  # Enter
+    return True
+
+
 def _wait_for_claude_ready(backend, full_name: str, timeout: float = 15.0) -> bool:
     """Poll screen capture until claude's idle input prompt (❯) is visible. Returns True if ready."""
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         lines = backend.capture(full_name)
+        if _dismiss_trust_dialog(backend, full_name, lines):
+            time.sleep(0.5)
+            continue
         # Match only lines where ❯ or > appears as the prompt char (start of a non-indented line)
         for line in lines:
             stripped = line.strip()
