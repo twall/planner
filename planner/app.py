@@ -1165,6 +1165,10 @@ class PlannerApp(App):
                 try:
                     await _do_launch_and_attach_inner()
                 except Exception as e:
+                    import logging
+                    logging.getLogger(__name__).exception(
+                        "Launch failed for task %s", task.get("id")
+                    )
                     self.notify(f"Launch failed: {e}", severity="error", timeout=10)
 
             async def _do_launch_and_attach_inner() -> None:
@@ -1287,6 +1291,14 @@ class _DaemonThreadPoolExecutor(concurrent.futures.ThreadPoolExecutor):
 
 def main():
     import sys
+    import logging
+    from planner.config import LOG_PATH
+    LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+    logging.basicConfig(
+        filename=str(LOG_PATH),
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    )
     result_file = sys.argv[1] if len(sys.argv) > 1 else None
     app = PlannerApp()
     # Use daemon threads in the default executor so pending background tasks

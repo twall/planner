@@ -10,6 +10,7 @@ STATE_PATH = Path.home() / ".planner" / "state.json"
 IGNORED_SESSIONS_PATH = Path.home() / ".planner" / "ignored_sessions.json"
 HOOK_STATE_DIR = Path.home() / ".planner" / "hook_states"
 MESSAGE_QUEUE_PATH = Path.home() / ".planner" / "message_queue.json"
+LOG_PATH = Path.home() / ".planner" / "planner.log"
 
 SCREEN_POLL_INTERVAL = 5
 SCREEN_IDLE_THRESHOLD = 30
