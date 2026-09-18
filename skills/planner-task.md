@@ -56,6 +56,8 @@ Always `list` first to get the session id before updating.
 
 ## Title and description format
 
+**Rule: if a ticket ID appears in the title, the ticket reference goes in `--desc` too — never title-only.** The desc is the session's starting prompt, so a ticket-only title with no desc leaves the launched session with no idea what to work on.
+
 When a session references a Sentry or JIRA issue:
 
 **Title** — prefix with the issue ID:
