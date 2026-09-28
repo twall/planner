@@ -77,7 +77,12 @@ def detect_state(lines: list[str], idle_seconds: float, attached: bool = False,
     if prev_state in ("NEEDS PERMISSION", "NEEDS INPUT"):
         non_blank = [l for l in lines if l.strip()]
         footer_text = "\n".join(non_blank[-3:]) if non_blank else ""
-        if not _CLAUDE_FOOTER_RE.search(footer_text):
+        recent_text = "\n".join(non_blank[-10:]) if non_blank else ""
+        # Turn resuming ("esc to interrupt" / exec indicators) also breaks stickiness —
+        # otherwise a session going busy again stays stuck at NEEDS INPUT/PERMISSION,
+        # since the active footer never matches the idle-footer pattern below.
+        resumed_active = _ACTIVE_FOOTER_RE.search(footer_text) or _ACTIVE_EXEC_RE.search(recent_text)
+        if not resumed_active and not _CLAUDE_FOOTER_RE.search(footer_text):
             return prev_state
     # Check for active signals before the idle_seconds gate — a long-running turn
     # stops changing the screen (idle_seconds climbs past threshold) but active
