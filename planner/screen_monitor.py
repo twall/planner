@@ -16,8 +16,12 @@ PROMPT_PATTERNS = [
 ]
 
 # Claude Code footer: present in all Claude sessions (idle, active, diff review, etc.)
-# Matches both "? for shortcuts" (idle at prompt, including while typing) and "for agents"
-_CLAUDE_FOOTER_RE = re.compile(r'for shortcuts|for agents|manual mode|accept edits', re.IGNORECASE)
+# Matches "? for shortcuts" (idle at prompt), "for agents", "manual mode", "accept edits",
+# and the auto-mode idle footer "auto mode on (shift+tab to cycle)".
+_CLAUDE_FOOTER_RE = re.compile(
+    r'for shortcuts|for agents|manual mode|accept edits|auto mode on|shift\+tab to cycle',
+    re.IGNORECASE
+)
 # Active turn only — absent when idle, in diff review, or any non-processing state.
 # Also matches streaming content indicators visible during a turn.
 _ACTIVE_FOOTER_RE = re.compile(r'esc to interrupt', re.IGNORECASE)
