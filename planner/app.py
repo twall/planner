@@ -690,22 +690,16 @@ class PlannerApp(App):
         _mark("_purge_stale_planner_session_tasks")
         _kill_stale_planner_screens()
         _mark("_kill_stale_planner_screens")
-        resume_sessions(DB_PATH)
-        _mark("resume_sessions")
+        # Resuming dead sessions is the slow part (each is a real `claude`
+        # process launch, ~6s+) and isn't needed to show the UI — kick it off
+        # in the background instead of blocking startup on it. Whatever's
+        # already live renders immediately below; _wake_and_poll runs again
+        # once resume_sessions finishes to pick up newly-resumed ones.
+        self.run_worker(lambda: resume_sessions(DB_PATH), thread=True, name="resume-sessions")
         # Load state and tasks after import_orphan_sessions so PIDs are current.
         ui = load_state()
-        from planner.db import list_tasks as _list_tasks
-        _tasks = _list_tasks(DB_PATH)
-        # Wake all sessions with active Claude conversations so _poll captures them.
-        # (capture_now is called per-session sequentially; wake is instant and lets
-        # the parallel _poll handle all captures in one pass.)
-        for _t in _tasks:
-            if _t.get("screen_session") and _t.get("claude_session_id"):
-                self._monitor.wake(_t["screen_session"])
-        _mark("wake sessions")
-        # Eager poll so session states are populated before first render
-        self._monitor._poll()
-        _mark("_monitor._poll (eager)")
+        self._wake_and_poll()
+        _mark("wake+poll (pre-resume)")
         panel = self.query_one(TaskPanel)
         panel.update_sessions(self._monitor.get_sessions())
         if ui.get("selected_task_id"):
@@ -716,6 +710,15 @@ class PlannerApp(App):
         self.run_worker(self._scheduler.run_all_due, thread=True, name="startup")
         _log.info("startup: _startup_inner total %.3fs", time.perf_counter() - _t0)
 
+    def _wake_and_poll(self) -> None:
+        """Wake sessions with active conversations and eagerly poll so their
+        state is current before the panel renders/refreshes."""
+        from planner.db import list_tasks as _list_tasks
+        for _t in _list_tasks(DB_PATH):
+            if _t.get("screen_session") and _t.get("claude_session_id"):
+                self._monitor.wake(_t["screen_session"])
+        self._monitor._poll()
+
     def on_worker_state_changed(self, event) -> None:
         from textual.worker import WorkerState
         if event.state in (WorkerState.SUCCESS, WorkerState.ERROR, WorkerState.CANCELLED):
@@ -723,6 +726,8 @@ class PlannerApp(App):
         if event.state == WorkerState.ERROR:
             self.notify(f"Background task failed: {event.worker.error}", severity="error", timeout=15)
         if event.state == WorkerState.SUCCESS:
+            if event.worker.name == "resume-sessions":
+                self._wake_and_poll()
             self.query_one(TaskPanel).refresh_tasks()
             self._update_briefing()
 

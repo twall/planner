@@ -62,8 +62,46 @@ class ScreenBackend(SessionBackend):
         return True
 
     def kill(self, full_name: str) -> None:
-        subprocess.run(["screen", "-S", full_name, "-X", "quit"],
-                       capture_output=True, timeout=5)
+        try:
+            result = subprocess.run(
+                ["screen", "-S", full_name, "-X", "quit"],
+                capture_output=True, timeout=5, text=True,
+            )
+            ok = result.returncode == 0
+        except (subprocess.TimeoutExpired, OSError):
+            ok = False
+        if ok:
+            return
+        # `-X quit` has been observed to fail against sessions that are
+        # genuinely still alive (not just already-dead stale sockets) —
+        # left unresolved, planner never actually tears those down, so
+        # duplicate sessions accumulate across restarts indefinitely.
+        # Fall back to signaling the daemon's own pid directly.
+        pid_str = full_name.split(".", 1)[0]
+        if not pid_str.isdigit():
+            return
+        pid = int(pid_str)
+        import os
+        import signal
+        try:
+            os.kill(pid, signal.SIGTERM)
+        except ProcessLookupError:
+            return  # already dead; nothing to clean up
+        except Exception:
+            _log.warning("kill: SIGTERM fallback failed for %s", full_name)
+            return
+        for _ in range(10):
+            time.sleep(0.2)
+            try:
+                os.kill(pid, 0)
+            except ProcessLookupError:
+                return
+        try:
+            os.kill(pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        except Exception:
+            _log.warning("kill: SIGKILL fallback failed for %s", full_name)
 
     def send_input(self, full_name: str, text: str) -> None:
         try:
