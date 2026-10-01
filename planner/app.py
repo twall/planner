@@ -1325,6 +1325,38 @@ class _DaemonThreadPoolExecutor(concurrent.futures.ThreadPoolExecutor):
             t.daemon = True
 
 
+_LOCK_PATH = Path.home() / ".planner" / "planner.lock"
+_lock_fh = None  # kept open for process lifetime; GC'ing it would release the flock
+
+
+def _acquire_single_instance_lock() -> bool:
+    """Exclusive-lock a pidfile so only one planner.app runs at a time.
+
+    Without this, launching planner from a plain terminal (the /planner
+    skill's non-screen/tmux path) starts a brand-new process every time with
+    no check for an already-running instance. Two instances independently
+    polling and resuming the same tasks.db + screen sessions race each
+    other — duplicate `claude --resume <id>` sessions get spawned for tasks
+    that already have a live session, which is what was piling up stale
+    screen daemons and eventually exhausting fork/pty resources.
+    """
+    import fcntl
+    global _lock_fh
+    _LOCK_PATH.parent.mkdir(parents=True, exist_ok=True)
+    _lock_fh = open(_LOCK_PATH, "a+")
+    try:
+        fcntl.flock(_lock_fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        _lock_fh.close()
+        _lock_fh = None
+        return False
+    _lock_fh.seek(0)
+    _lock_fh.truncate()
+    _lock_fh.write(str(os.getpid()))
+    _lock_fh.flush()
+    return True
+
+
 def main():
     import sys
     import logging
@@ -1335,6 +1367,18 @@ def main():
         level=logging.INFO,
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
+    if not _acquire_single_instance_lock():
+        existing_pid = ""
+        try:
+            existing_pid = _LOCK_PATH.read_text().strip()
+        except Exception:
+            pass
+        print(
+            f"planner is already running (pid {existing_pid or '?'}) — "
+            "attach to its session instead of starting a second instance.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
     result_file = sys.argv[1] if len(sys.argv) > 1 else None
     app = PlannerApp()
     # Use daemon threads in the default executor so pending background tasks

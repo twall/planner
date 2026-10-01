@@ -225,14 +225,56 @@ def _bare_name(screen_session: str) -> str:
     return screen_session
 
 
+def _resume_one(db_path: Path, backend, t: dict) -> bool:
+    """Launch+verify a single dead session's resume. Blocking; run off the main thread."""
+    name = session_name_for(t["id"])
+    shell_cmd = f"exec claude --resume {t['claude_session_id']}"
+    launch_cwd = _resolve_cwd(t.get("cwd"))
+    backend.launch(name, shell_cmd, cwd=launch_cwd)
+    # Poll up to 5s to confirm the session survived (--resume fails fast on stale IDs)
+    deadline = time.monotonic() + 5.0
+    full_name = None
+    while time.monotonic() < deadline:
+        full_name = _resolve_full_name(backend, name)
+        if full_name:
+            break
+        time.sleep(0.3)
+    if not full_name:
+        import logging
+        logging.getLogger(__name__).warning(
+            "resume_sessions: session %s never became live; clearing stale ID for task %d",
+            name, t["id"]
+        )
+        update_task(db_path, t["id"], claude_session_id=None, screen_session=None)
+        return False
+    # Verify it's still alive a moment later (fast failures exit before we can attach)
+    time.sleep(1.0)
+    still_live = _resolve_full_name(backend, name)
+    if not still_live:
+        import logging
+        logging.getLogger(__name__).warning(
+            "resume_sessions: session %s died after launch; clearing stale ID for task %d",
+            name, t["id"]
+        )
+        update_task(db_path, t["id"], claude_session_id=None, screen_session=None)
+        return False
+    update_task(db_path, t["id"], screen_session=full_name)
+    return True
+
+
 def resume_sessions(db_path: Path) -> int:
-    """Recreate sessions for tasks with claude_session_id but no live session."""
+    """Recreate sessions for tasks with claude_session_id but no live session.
+
+    Each dead session's resume (launch + poll + verify-sleep) blocks for up to
+    ~6s; done in parallel via a thread pool instead of sequentially so N dead
+    sessions cost ~6s total rather than ~6s * N.
+    """
     backend = get_backend()
     live = _live_sessions()
     live_names = {s["name"] for s in live.values()}
     live_full_names = set(live.keys())
     tasks = list_tasks(db_path)
-    resumed = 0
+    to_resume = []
     for t in tasks:
         if not t.get("claude_session_id"):
             continue
@@ -259,40 +301,13 @@ def resume_sessions(db_path: Path) -> int:
             if matching and matching["full_name"] != stored:
                 update_task(db_path, t["id"], screen_session=matching["full_name"])
             continue
-        shell_cmd = f"exec claude --resume {t['claude_session_id']}"
-        launch_cwd = _resolve_cwd(t.get("cwd"))
-        backend.launch(name, shell_cmd, cwd=launch_cwd)
-        # Poll up to 5s to confirm the session survived (--resume fails fast on stale IDs)
-        deadline = time.monotonic() + 5.0
-        full_name = None
-        while time.monotonic() < deadline:
-            full_name = _resolve_full_name(backend, name)
-            if full_name:
-                break
-            time.sleep(0.3)
-        if not full_name:
-            # Session never appeared or died immediately — stale session ID; clear it
-            import logging
-            logging.getLogger(__name__).warning(
-                "resume_sessions: session %s never became live; clearing stale ID for task %d",
-                name, t["id"]
-            )
-            update_task(db_path, t["id"], claude_session_id=None, screen_session=None)
-            continue
-        # Verify it's still alive a moment later (fast failures exit before we can attach)
-        time.sleep(1.0)
-        still_live = _resolve_full_name(backend, name)
-        if not still_live:
-            import logging
-            logging.getLogger(__name__).warning(
-                "resume_sessions: session %s died after launch; clearing stale ID for task %d",
-                name, t["id"]
-            )
-            update_task(db_path, t["id"], claude_session_id=None, screen_session=None)
-            continue
-        update_task(db_path, t["id"], screen_session=full_name)
-        resumed += 1
-    return resumed
+        to_resume.append(t)
+    if not to_resume:
+        return 0
+    from concurrent.futures import ThreadPoolExecutor
+    with ThreadPoolExecutor(max_workers=min(4, len(to_resume))) as pool:
+        results = list(pool.map(lambda t: _resume_one(db_path, backend, t), to_resume))
+    return sum(results)
 
 
 def resume_session(db_path: Path, task: dict, cwd: str | None = None,
