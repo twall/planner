@@ -24,13 +24,26 @@ class TmuxBackend(SessionBackend):
         return sessions
 
     def launch(self, name: str, shell_cmd: str, cwd: str | None = None,
-               cols: int = 220, rows: int = 50) -> None:
+               cols: int = 220, rows: int = 50) -> bool:
         cmd = ["tmux", "new-session", "-d", "-s", name,
                "-x", str(cols), "-y", str(rows)]
         if cwd:
             cmd += ["-c", cwd]
         cmd += [shell_cmd]
-        subprocess.run(cmd, timeout=10)
+        try:
+            result = subprocess.run(cmd, timeout=10, capture_output=True, text=True)
+        except subprocess.TimeoutExpired:
+            import logging
+            logging.getLogger(__name__).warning("launch timeout starting tmux session %s", name)
+            return False
+        if result.returncode != 0:
+            import logging
+            logging.getLogger(__name__).warning(
+                "launch failed starting tmux session %s (exit %d): %s",
+                name, result.returncode, result.stderr.strip()
+            )
+            return False
+        return True
 
     def kill(self, full_name: str) -> None:
         subprocess.run(["tmux", "kill-session", "-t", full_name],

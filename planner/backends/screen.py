@@ -26,7 +26,7 @@ class ScreenBackend(SessionBackend):
         return sessions
 
     def launch(self, name: str, shell_cmd: str, cwd: str | None = None,
-               cols: int = 220, rows: int = 50) -> None:
+               cols: int = 220, rows: int = 50) -> bool:
         # Trap ERR so the screen session stays open on failure instead of silently dying.
         # EXIT is intentionally excluded — normal exit (after claude exits) should close cleanly.
         wrapped = (
@@ -34,10 +34,24 @@ class ScreenBackend(SessionBackend):
             f"trap 'echo \"[planner] session failed (exit $?) — press Enter to close\"; read' ERR; "
             f"{shell_cmd}"
         )
-        subprocess.run(
-            ["screen", "-S", name, "-dm", "bash", "-c", wrapped],
-            timeout=10, cwd=cwd
-        )
+        try:
+            result = subprocess.run(
+                ["screen", "-S", name, "-dm", "bash", "-c", wrapped],
+                timeout=10, cwd=cwd, capture_output=True, text=True,
+            )
+        except subprocess.TimeoutExpired:
+            _log.warning("launch timeout starting screen session %s", name)
+            return False
+        if result.returncode != 0:
+            # e.g. "Cannot allocate memory" / "Resource unavailable" under fork/pty
+            # pressure — this is the multiplexer itself failing, not the launched
+            # command exiting. Callers must not mistake this for a dead session id.
+            _log.warning(
+                "launch failed starting screen session %s (exit %d): %s",
+                name, result.returncode, result.stderr.strip()
+            )
+            return False
+        return True
 
     def kill(self, full_name: str) -> None:
         subprocess.run(["screen", "-S", full_name, "-X", "quit"],

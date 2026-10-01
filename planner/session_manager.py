@@ -230,7 +230,17 @@ def _resume_one(db_path: Path, backend, t: dict) -> bool:
     name = session_name_for(t["id"])
     shell_cmd = f"exec claude --resume {t['claude_session_id']}"
     launch_cwd = _resolve_cwd(t.get("cwd"))
-    backend.launch(name, shell_cmd, cwd=launch_cwd)
+    if not backend.launch(name, shell_cmd, cwd=launch_cwd):
+        # The multiplexer itself failed to start (e.g. transient fork/pty
+        # exhaustion) — the session id is not known to be bad, so leave the
+        # task's claude_session_id/screen_session alone and retry on the next
+        # startup instead of permanently discarding a resumable conversation.
+        import logging
+        logging.getLogger(__name__).warning(
+            "resume_sessions: launch failed for %s; leaving task %d to retry later",
+            name, t["id"]
+        )
+        return False
     # Poll up to 5s to confirm the session survived (--resume fails fast on stale IDs)
     deadline = time.monotonic() + 5.0
     full_name = None
@@ -304,8 +314,11 @@ def resume_sessions(db_path: Path) -> int:
         to_resume.append(t)
     if not to_resume:
         return 0
+    # Cap concurrency low: each resume forks a screen daemon + a full claude
+    # process, and launching too many at once can itself trip transient
+    # fork/pty exhaustion ("Cannot allocate memory: screen") under load.
     from concurrent.futures import ThreadPoolExecutor
-    with ThreadPoolExecutor(max_workers=min(4, len(to_resume))) as pool:
+    with ThreadPoolExecutor(max_workers=min(2, len(to_resume))) as pool:
         results = list(pool.map(lambda t: _resume_one(db_path, backend, t), to_resume))
     return sum(results)
 

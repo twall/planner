@@ -16,8 +16,10 @@ class SessionBackend(ABC):
 
     @abstractmethod
     def launch(self, name: str, shell_cmd: str, cwd: str | None = None,
-               cols: int = 220, rows: int = 50) -> None:
-        """Start a new detached session running shell_cmd."""
+               cols: int = 220, rows: int = 50) -> bool:
+        """Start a new detached session running shell_cmd. Returns False if the
+        multiplexer itself failed to launch (e.g. transient resource exhaustion) —
+        callers must not treat that the same as the session's command exiting."""
 
     @abstractmethod
     def kill(self, full_name: str) -> None:
