@@ -615,10 +615,23 @@ class PlannerApp(App):
             self.notify(f"Startup error: {e}", severity="error", timeout=10)
 
     async def _startup_inner(self) -> None:
+        import time
+        import logging
+        _log = logging.getLogger(__name__)
+        _t0 = time.perf_counter()
+        _last = [_t0]
+
+        def _mark(label: str) -> None:
+            now = time.perf_counter()
+            _log.info("startup: %s took %.3fs (elapsed %.3fs)", label, now - _last[0], now - _t0)
+            _last[0] = now
+
         from planner.db import add_task, list_tasks
         from planner.session_manager import import_orphan_sessions, resume_sessions
         _install_skills()
+        _mark("_install_skills")
         ingested = _ingest_inbox(DB_PATH)
+        _mark("_ingest_inbox")
         if ingested:
             self.call_after_refresh(self.notify, f"Imported {ingested} session(s) from inbox")
         self.run_worker(self._check_for_update, thread=True, name="update-check")
@@ -626,6 +639,7 @@ class PlannerApp(App):
         from planner.db import _conn
         with _conn(DB_PATH) as conn:
             all_rows = [dict(r) for r in conn.execute("SELECT * FROM tasks").fetchall()]
+        _mark("load all_rows")
         for bt in _BUILTIN_TASKS:
             key = bt["key"]
             matches = [t for t in all_rows if t["source"] == "builtin"
@@ -648,6 +662,7 @@ class PlannerApp(App):
                     updates["status"] = "open"
                 if updates:
                     update_task(DB_PATH, match["id"], **updates)
+        _mark("builtin tasks sync")
         for rt in self._scheduler.load_tasks():
             match = next((t for t in all_rows
                           if t["title"] == rt.label or t["source"] == rt.name), None)
@@ -656,12 +671,18 @@ class PlannerApp(App):
                          description=rt.prompt, horizon="today", priority=2)
             elif match["status"] == "done":
                 update_task(DB_PATH, match["id"], status="open")
+        _mark("recurring tasks sync")
         from planner.scheduler import import_tasks_to_db
         import_tasks_to_db(DB_PATH)
+        _mark("import_tasks_to_db")
         import_orphan_sessions(DB_PATH)
+        _mark("import_orphan_sessions")
         _purge_stale_planner_session_tasks(DB_PATH)
+        _mark("_purge_stale_planner_session_tasks")
         _kill_stale_planner_screens()
+        _mark("_kill_stale_planner_screens")
         resume_sessions(DB_PATH)
+        _mark("resume_sessions")
         # Load state and tasks after import_orphan_sessions so PIDs are current.
         ui = load_state()
         from planner.db import list_tasks as _list_tasks
@@ -672,15 +693,19 @@ class PlannerApp(App):
         for _t in _tasks:
             if _t.get("screen_session") and _t.get("claude_session_id"):
                 self._monitor.wake(_t["screen_session"])
+        _mark("wake sessions")
         # Eager poll so session states are populated before first render
         self._monitor._poll()
+        _mark("_monitor._poll (eager)")
         panel = self.query_one(TaskPanel)
         panel.update_sessions(self._monitor.get_sessions())
         if ui.get("selected_task_id"):
             panel._desired_id = ui["selected_task_id"]
         panel.refresh_tasks()
+        _mark("panel render")
         self.query_one("#loading").add_class("visible")
         self.run_worker(self._scheduler.run_all_due, thread=True, name="startup")
+        _log.info("startup: _startup_inner total %.3fs", time.perf_counter() - _t0)
 
     def on_worker_state_changed(self, event) -> None:
         from textual.worker import WorkerState
