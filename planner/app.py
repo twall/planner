@@ -582,6 +582,16 @@ class PlannerApp(App):
         import signal
         init_db(DB_PATH)
         self._monitor.start()
+        # Render immediately from whatever's already cached/in the DB — the
+        # monitor seeds its session states from the on-disk cache at
+        # construction, and TaskPanel.refresh_tasks() reads the DB directly.
+        # Without this, the panel sat at its blank/default state for however
+        # long _startup_inner's DB-sync and subprocess-heavy steps took
+        # before its first update_sessions()/refresh_tasks() call, even
+        # though a perfectly good cached state was sitting there unused.
+        panel = self.query_one(TaskPanel)
+        panel.update_sessions(self._monitor.get_sessions())
+        panel.refresh_tasks()
         self._apply_keymap()
         self.set_interval(self._settings.screen_poll_interval, self._refresh_sessions)
         self.set_interval(load_jira_sync_interval(), self.action_sync_jira)
