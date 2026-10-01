@@ -131,15 +131,24 @@ def _kill_stale_planner_screens() -> None:
     try:
         live = {t["screen_session"] for t in list_tasks(DB_PATH) if t.get("screen_session")}
         backend = get_backend()
-        for s in backend.list_sessions():
-            if s.attached or s.full_name == current_sty or s.name == current_name:
-                continue
-            is_planner = re.fullmatch(r"planner-\d+", s.name)
-            is_task = re.fullmatch(r"task-\d+(-.*)?", s.name)
-            if (is_planner or is_task) and s.full_name not in live:
-                backend.kill(s.full_name)
+        sessions = backend.list_sessions()
     except Exception:
-        pass
+        return
+    for s in sessions:
+        if s.attached or s.full_name == current_sty or s.name == current_name:
+            continue
+        is_planner = re.fullmatch(r"planner-\d+", s.name)
+        is_task = re.fullmatch(r"task-\d+(-.*)?", s.name)
+        if (is_planner or is_task) and s.full_name not in live:
+            try:
+                backend.kill(s.full_name)
+            except Exception:
+                # Don't let one failed kill abort the rest of the sweep —
+                # that let genuine stale duplicates pile up indefinitely.
+                import logging
+                logging.getLogger(__name__).warning(
+                    "_kill_stale_planner_screens: failed to kill %s", s.full_name
+                )
 
 
 def _install_skills() -> None:

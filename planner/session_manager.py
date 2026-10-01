@@ -372,14 +372,25 @@ def import_orphan_sessions(db_path: Path) -> int:
     import os as _os
     own_sty = _os.environ.get("STY", "")
 
-    # When multiple live sessions share a bare name, pick the preferred one (STY if present).
+    # When multiple live sessions share a bare name (duplicate resumes of the
+    # same task — the actual bug this is working around), pick the preferred
+    # one. Must prefer whatever the DB already points to over an arbitrary
+    # candidate: picking any other duplicate here reassigns screen_session
+    # out from under the session actually in use, and _kill_stale_planner_screens
+    # then kills that now-"untracked" live session right out from under the
+    # user — this is what was producing "task did not complete" on sessions
+    # that were still actively running.
     from collections import defaultdict
     bare_to_live: dict[str, list[str]] = defaultdict(list)
     for full_name in live:
         bare_to_live[live[full_name]["name"]].append(full_name)
-    preferred_full: dict[str, str] = {
-        name: _prefer_sty(fns) for name, fns in bare_to_live.items()
-    }
+    preferred_full: dict[str, str] = {}
+    for bname, fns in bare_to_live.items():
+        stored = bare_to_task.get(bname, {}).get("screen_session")
+        if stored and stored in fns:
+            preferred_full[bname] = stored
+        else:
+            preferred_full[bname] = _prefer_sty(fns)
 
     imported = 0
     for full_name, s in live.items():
