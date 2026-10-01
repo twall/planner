@@ -317,9 +317,24 @@ def resume_sessions(db_path: Path) -> int:
     # Cap concurrency low: each resume forks a screen daemon + a full claude
     # process, and launching too many at once can itself trip transient
     # fork/pty exhaustion ("Cannot allocate memory: screen") under load.
+    def _safe_resume(t: dict) -> bool:
+        try:
+            return _resume_one(db_path, backend, t)
+        except Exception:
+            # Any unexpected error (e.g. a fork() EAGAIN that slipped past
+            # backend.launch) must not propagate: pool.map() re-raises worker
+            # exceptions on consumption, which would abort the whole startup
+            # pass — surfaced to the user as "Startup Error [Errno 35]..."
+            # instead of just skipping this one task to retry later.
+            import logging
+            logging.getLogger(__name__).exception(
+                "resume_sessions: unexpected error resuming task %d", t["id"]
+            )
+            return False
+
     from concurrent.futures import ThreadPoolExecutor
     with ThreadPoolExecutor(max_workers=min(2, len(to_resume))) as pool:
-        results = list(pool.map(lambda t: _resume_one(db_path, backend, t), to_resume))
+        results = list(pool.map(_safe_resume, to_resume))
     return sum(results)
 
 

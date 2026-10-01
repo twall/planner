@@ -36,6 +36,10 @@ class TmuxBackend(SessionBackend):
             import logging
             logging.getLogger(__name__).warning("launch timeout starting tmux session %s", name)
             return False
+        except OSError as e:
+            import logging
+            logging.getLogger(__name__).warning("launch raised OSError for tmux session %s: %s", name, e)
+            return False
         if result.returncode != 0:
             import logging
             logging.getLogger(__name__).warning(

@@ -42,6 +42,14 @@ class ScreenBackend(SessionBackend):
         except subprocess.TimeoutExpired:
             _log.warning("launch timeout starting screen session %s", name)
             return False
+        except OSError as e:
+            # fork() itself can fail under resource pressure (EAGAIN/ENOMEM)
+            # before screen even runs — subprocess.run raises OSError here
+            # rather than returning a non-zero exit code. Must not propagate:
+            # callers (resume_sessions' thread pool) would otherwise crash
+            # the whole startup pass on one transient fork failure.
+            _log.warning("launch raised OSError for screen session %s: %s", name, e)
+            return False
         if result.returncode != 0:
             # e.g. "Cannot allocate memory" / "Resource unavailable" under fork/pty
             # pressure — this is the multiplexer itself failing, not the launched
