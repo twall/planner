@@ -1,4 +1,5 @@
 import json
+import shlex
 import time
 import uuid
 from pathlib import Path
@@ -165,12 +166,10 @@ def launch_session(db_path: Path, task: dict, cwd: str | None = None,
     task_id = task["id"]
     name = session_name_for(task_id, task.get("title"))
     session_id = str(uuid.uuid4())
-    # Omit --name: Claude Code dedupes session names across *all* live
-    # sessions on the machine and auto-renames (via /rename) on collision.
-    # With many planner-managed sessions, labels collide often, so this was
-    # firing unwanted renames across virtually every session. Planner tracks
-    # its own titles in the DB and doesn't need Claude's --name for anything.
+    label = _session_label(task)
     shell_cmd = f"exec claude --session-id {session_id}"
+    if label:
+        shell_cmd += f" --name {shlex.quote(label)}"
     effective_launch_cwd = _resolve_cwd(cwd)
     backend.launch(name, shell_cmd, cwd=effective_launch_cwd, cols=cols, rows=rows)
     # full_name differs by backend: screen uses PID.name, tmux uses name

@@ -183,6 +183,7 @@ def _ingest_inbox(db_path: Path) -> int:
             description=entry.get("description"),
             horizon=entry.get("horizon", "this_week"),
             priority=entry.get("priority", 3),
+            is_prompt=entry.get("is_prompt", True),
         )
         count += 1
     _INBOX_PATH.unlink(missing_ok=True)
