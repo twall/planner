@@ -31,11 +31,13 @@ HELP = """\
 Usage: planner.cli <command> [options]
 
 Commands:
-  add <title> [--today|--week|--backlog] [--priority 1-5] [--desc "..."] [--prompt "..."]
+  add <title> [--today|--week|--backlog] [--priority 1-5] [--desc "..."] [--prompt "..."] [--cwd "..."]
       Add a new session.
       --desc      Set the description (notes; not injected as a prompt on launch).
       --prompt    Set the description AND mark it to be injected as the
                   session's opening prompt on launch (is_prompt=1).
+      --cwd       Working directory the session launches in (defaults to
+                  planner's own root if unset).
 
   list [-v|--verbose]
       List all open sessions with id, source, title, horizon, and priority.
@@ -52,6 +54,7 @@ Commands:
       --desc "..."                   Set the description (notes only)
       --prompt "..."                 Set the description AND is_prompt=1
                                       (inject as opening prompt on next launch)
+      --cwd "..."                    Change the working directory the session launches in
 
   delete <id>
       Delete a task by id (marks it done and kills its session if running).
@@ -105,6 +108,7 @@ def main(argv: list[str] | None = None) -> int:
         priority = 3
         description = None
         is_prompt = False
+        cwd = None
         i = 1
         while i < len(rest):
             if rest[i] == "--today":
@@ -126,9 +130,12 @@ def main(argv: list[str] | None = None) -> int:
                 description = rest[i + 1]
                 is_prompt = True
                 i += 1
+            elif rest[i] == "--cwd" and i + 1 < len(rest):
+                cwd = rest[i + 1]
+                i += 1
             i += 1
         task_id = add_task(DB_PATH, source="freeform", title=title, horizon=horizon, priority=priority,
-                            description=description, is_prompt=is_prompt)
+                            description=description, is_prompt=is_prompt, cwd=cwd)
         print(f"Added session #{task_id}: {title} [{horizon}]")
         return 0
 
@@ -266,6 +273,9 @@ def main(argv: list[str] | None = None) -> int:
             elif rest[i] == "--prompt" and i + 1 < len(rest):
                 fields["description"] = rest[i + 1]
                 fields["is_prompt"] = 1
+                i += 1
+            elif rest[i] == "--cwd" and i + 1 < len(rest):
+                fields["cwd"] = rest[i + 1]
                 i += 1
             i += 1
         if not fields:

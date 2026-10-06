@@ -10,10 +10,10 @@ Add, list, or update sessions in the planner dashboard. Alias: `/task`.
 ## Usage
 
 ```
-/planner-task add "title" [--today|--week|--backlog] [--priority 1-5]
+/planner-task add "title" [--today|--week|--backlog] [--priority 1-5] [--cwd "path"]
 /planner-task list [-v|--verbose]
 /planner-task get <id>
-/planner-task update <id> [--today|--week|--backlog] [--priority N] [--title "..."] [--desc "..."]
+/planner-task update <id> [--today|--week|--backlog] [--priority N] [--title "..."] [--desc "..."] [--cwd "path"]
 ```
 
 ## Implementation
@@ -26,8 +26,12 @@ cd "$PLANNER_DIR"
 
 Add:
 ```bash
-python -m planner.cli add "<title>" [--today|--week|--backlog] [--priority N]
+python -m planner.cli add "<title>" [--today|--week|--backlog] [--priority N] [--cwd "<path>"]
 ```
+
+`--cwd` sets the directory the session launches in (defaults to planner's own root). Use it whenever
+the session's work is scoped to a specific repo/worktree the user already has checked out — e.g. a PR
+review session should launch inside that PR's repo, not planner's root.
 
 List:
 ```bash
@@ -42,7 +46,7 @@ python -m planner.cli get <id>
 
 Update (use the id from `list`):
 ```bash
-python -m planner.cli update <id> [--today|--week|--backlog] [--priority N] [--title "new title"] [--desc "new description"]
+python -m planner.cli update <id> [--today|--week|--backlog] [--priority N] [--title "new title"] [--desc "new description"] [--cwd "new/path"]
 ```
 
 ## When to use update
@@ -51,6 +55,7 @@ python -m planner.cli update <id> [--today|--week|--backlog] [--priority N] [--t
 - User asks to move a session to a different horizon → `--today`, `--week`, or `--backlog`
 - User asks to rename a session → `--title "new title"`
 - User asks to set or change the description/prompt → `--desc "..."`
+- User asks to change which directory a session launches in → `--cwd "..."`
 
 Always `list` first to get the session id before updating.
 
