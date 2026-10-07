@@ -945,7 +945,7 @@ class PlannerApp(App):
             if live and live.name != _session_label(task):
                 from planner.backends import get_backend
                 _rename_claude_session(get_backend(), task["screen_session"], task["title"],
-                                        task.get("jira_key"))
+                                        task.get("jira_key"), task_id=task["id"])
 
     def on_task_edit_pane_edit_cancelled(self, event: TaskEditPane.EditCancelled) -> None:
         pass  # stay in task pane; hint already updated by TaskEditPane

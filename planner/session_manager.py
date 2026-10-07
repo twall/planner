@@ -48,14 +48,25 @@ def _live_sessions() -> dict[str, dict]:
 
 
 def _session_label(task: dict) -> str:
-    """Build a short session name label from task title + optional jira key."""
+    """Build a short, collision-proof session name label from task title + optional jira key.
+
+    Claude Code dedupes --name across *all* live sessions on the machine and
+    silently auto-renames on collision (see launch_session). Two tasks with
+    the same title would otherwise get silently reassigned names, breaking
+    SendMessage/ListAgents addressing for anyone who cached the pre-collision
+    name. Suffixing the task id guarantees uniqueness without losing
+    readability.
+    """
     title = (task.get("title") or "").replace("\n", " ").replace("\r", " ").strip()
     jira_key = task.get("jira_key")
     label = f"{jira_key} {title}" if jira_key else title
-    return label[:60].strip()
+    label = label[:55].strip()
+    task_id = task.get("id")
+    return f"{label} #{task_id}" if task_id is not None else label
 
 
-def _rename_claude_session(backend, full_name: str, title: str, jira_key: str | None = None) -> bool:
+def _rename_claude_session(backend, full_name: str, title: str, jira_key: str | None = None,
+                            task_id: int | None = None) -> bool:
     """Send /rename <title> to set the Claude session name.
 
     Waits for the composer to be ready first — firing this blind can race
@@ -69,7 +80,7 @@ def _rename_claude_session(backend, full_name: str, title: str, jira_key: str | 
             "_rename_claude_session: session %s never became ready; skipping rename", full_name
         )
         return False
-    label = _session_label({"title": title, "jira_key": jira_key})
+    label = _session_label({"title": title, "jira_key": jira_key, "id": task_id})
     backend.send_input(full_name, f"/rename {label}")
     return True
 
