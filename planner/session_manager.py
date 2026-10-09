@@ -86,17 +86,20 @@ def _rename_claude_session(backend, full_name: str, title: str, jira_key: str | 
 
 
 def _send_commands(backend, full_name: str, text: str, auto_submit: bool = True) -> bool:
-    """Populate prompt into the input buffer; submit only if auto_submit=True. Returns False if session never became ready."""
-    lines = [l.strip() for l in text.split("\n") if l.strip()]
-    prompt = " ".join(lines)
+    """Populate prompt into the input buffer; submit only if auto_submit=True. Returns False if session never became ready.
+
+    Wrapped in bracketed-paste markers (ESC[200~ ... ESC[201~) so embedded newlines land as
+    literal newlines in the composer instead of each one submitting early, which is what
+    happens if raw newlines are stuffed into screen/tmux directly.
+    """
+    prompt = text.strip()
     if not _wait_for_claude_ready(backend, full_name):
         import logging
         logging.getLogger(__name__).warning("Session %s never became ready; skipping prompt injection", full_name)
         return False
+    backend.send_raw(full_name, f"\x1b[200~{prompt}\x1b[201~")
     if auto_submit:
-        backend.send_input(full_name, prompt)
-    else:
-        backend.send_raw(full_name, prompt)
+        backend.send_raw(full_name, "\r")
     return True
 
 
