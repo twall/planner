@@ -227,18 +227,20 @@ class TaskPanel(Widget):
         sess = self._session_states.get(t.get("screen_session") or "")
         idle_suffix = ""
         if sess:
-            color = STATE_COLORS.get(sess.state, "white")
             if sess.state == "ACTIVE":
                 frame = SPINNER_FRAMES[int(time.time() * 4) % len(SPINNER_FRAMES)]
                 badge = f"[green]{frame}[/green] "
             elif sess.state == "IDLE":
-                # Dim bullet alone reads as "no session" at a glance — distinguish
-                # a finished turn awaiting review from a never-started task.
+                # White bullet = finished within the last hour, awaiting review.
+                # Fades to dim after that — stale, lower priority to re-check.
+                color = "white" if sess.idle_seconds < 3600 else "dim"
                 badge = f"[{color}]●[/{color}] "
                 idle_suffix = "  [dim]done[/dim]"
             else:
+                color = STATE_COLORS.get(sess.state, "white")
                 badge = f"[{color}]●[/{color}] "
         else:
+            # No session yet — not yet active, no dot.
             badge = "  "
         title = t["title"]
         if t.get("status") == "done":

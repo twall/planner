@@ -171,19 +171,32 @@ class ScreenMonitor:
         from planner.backends import get_backend
         self._backend = get_backend()
         # Seed display with cached states from previous run; first poll overwrites.
+        # idle_seconds is reconstructed from the persisted wall-clock "went idle
+        # at" timestamp so a restart doesn't make every idle session look freshly
+        # finished (planner restarts routinely when switching sessions).
         from planner.state import load_session_states
         cached = load_session_states()
+        now_wall = time.time()
+        now_mono = time.monotonic()
+
+        def _idle_seconds(entry: dict) -> float:
+            ts = entry.get("ts") or 0
+            if ts <= 0:
+                return float("inf")  # unknown age — treat as stale, not fresh
+            return max(0.0, now_wall - ts)
+
         self._sessions: list[SessionState] = [
             SessionState(pid=fn, name=fn.split(".", 1)[1] if "." in fn else fn,
                          full_name=fn, attached=False,
-                         state=entry["state"], last_lines=entry["lines"])
+                         state=entry["state"], last_lines=entry["lines"],
+                         idle_seconds=_idle_seconds(entry))
             for fn, entry in cached.items()
         ]
         # Seed snapshots so empty hardcopy falls back to cached lines, not [].
-        t0 = time.monotonic()
         for fn, entry in cached.items():
             if entry.get("lines"):
-                self._snapshots[fn] = (entry["lines"], t0)
+                snapshot_mono = now_mono - min(_idle_seconds(entry), now_mono)
+                self._snapshots[fn] = (entry["lines"], snapshot_mono)
         # Restore idle-skip with a short delay rather than infinite — ensures sessions
         # that were idle at shutdown still get re-checked within 120s of restart.
         # Do NOT skip on first poll: planner may have been down while a permission
