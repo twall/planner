@@ -225,11 +225,17 @@ class TaskPanel(Widget):
         cursor = "▶ " if is_cursor else "  "
         jira = f"[{t['jira_key']}] " if t.get("jira_key") else f"[{tag}] "
         sess = self._session_states.get(t.get("screen_session") or "")
+        idle_suffix = ""
         if sess:
             color = STATE_COLORS.get(sess.state, "white")
             if sess.state == "ACTIVE":
                 frame = SPINNER_FRAMES[int(time.time() * 4) % len(SPINNER_FRAMES)]
                 badge = f"[green]{frame}[/green] "
+            elif sess.state == "IDLE":
+                # Dim bullet alone reads as "no session" at a glance — distinguish
+                # a finished turn awaiting review from a never-started task.
+                badge = f"[{color}]●[/{color}] "
+                idle_suffix = "  [dim]done[/dim]"
             else:
                 badge = f"[{color}]●[/{color}] "
         else:
@@ -237,7 +243,7 @@ class TaskPanel(Widget):
         title = t["title"]
         if t.get("status") == "done":
             title = f"[dim strike]{title}[/strike][/dim]"
-        return f"{cursor}{badge}{jira}{title}"
+        return f"{cursor}{badge}{jira}{title}{idle_suffix}"
 
     def action_move_cursor_down(self) -> None:
         if not self._tasks:
