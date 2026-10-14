@@ -316,11 +316,19 @@ def resume_sessions(db_path: Path) -> int:
             or any(n == id_prefix or n.startswith(id_prefix + "-") for n in live_names)
         )
         if already_live:
-            # Update stored name if it changed (e.g. old slug format → id-only)
-            matching = next((s for s in live.values()
-                             if s["name"] == name
-                             or s["name"] == stored_bare
-                             or s["name"].startswith(id_prefix)), None)
+            # Update stored name if it changed (e.g. old slug format → id-only).
+            # Always prefer the exact id-name match over a fallback match on
+            # stored_bare/id_prefix: stored_bare is derived from whatever is
+            # already in the DB, so if it's stale (points at a *different*
+            # task's live session, e.g. from a prior cross-link bug), it must
+            # not be allowed to out-rank the unambiguous exact match — doing
+            # so previously caused the match to flip depending on dict
+            # iteration order of live sessions across restarts.
+            matching = next((s for s in live.values() if s["name"] == name), None)
+            if matching is None:
+                matching = next((s for s in live.values()
+                                 if s["name"] == stored_bare
+                                 or s["name"].startswith(id_prefix)), None)
             if matching and matching["full_name"] != stored:
                 update_task(db_path, t["id"], screen_session=matching["full_name"])
             continue
