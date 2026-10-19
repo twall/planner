@@ -49,9 +49,19 @@ class TmuxBackend(SessionBackend):
             return False
         return True
 
-    def kill(self, full_name: str) -> None:
+    def kill(self, full_name: str, leaf_pid: str | None = None) -> None:
         subprocess.run(["tmux", "kill-session", "-t", full_name],
                        capture_output=True, timeout=5)
+        # tmux kill-session reliably tears down its pane's process tree via
+        # SIGHUP, unlike screen — but if a leaf_pid was passed (e.g. from a
+        # caller that doesn't know which backend is active), still make sure.
+        if leaf_pid and leaf_pid.isdigit():
+            import os
+            import signal
+            try:
+                os.kill(int(leaf_pid), signal.SIGTERM)
+            except ProcessLookupError:
+                pass
 
     def send_input(self, full_name: str, text: str) -> None:
         try:

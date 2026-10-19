@@ -189,7 +189,10 @@ def launch_session(db_path: Path, task: dict, cwd: str | None = None,
     # full_name differs by backend: screen uses PID.name, tmux uses name
     # Resolve by looking up the just-created session
     full_name = _resolve_full_name(backend, name) or name
-    update_kwargs: dict = dict(screen_session=full_name, claude_session_id=session_id)
+    update_kwargs: dict = dict(
+        screen_session=full_name, claude_session_id=session_id,
+        session_pid=backend.get_leaf_pid(full_name),
+    )
     if effective_launch_cwd:
         update_kwargs["cwd"] = effective_launch_cwd
     update_task(db_path, task_id, **update_kwargs)
@@ -281,7 +284,8 @@ def _resume_one(db_path: Path, backend, t: dict) -> bool:
         )
         update_task(db_path, t["id"], claude_session_id=None, screen_session=None)
         return False
-    update_task(db_path, t["id"], screen_session=full_name)
+    update_task(db_path, t["id"], screen_session=full_name,
+                session_pid=backend.get_leaf_pid(full_name))
     return True
 
 
@@ -371,15 +375,15 @@ def resume_session(db_path: Path, task: dict, cwd: str | None = None,
     backend.launch(name, shell_cmd, cwd=effective_cwd, cols=cols, rows=rows)
     time.sleep(2)  # wait for claude --resume to initialize before attach
     full_name = _resolve_full_name(backend, name) or name
-    update_kwargs: dict = dict(screen_session=full_name)
+    update_kwargs: dict = dict(screen_session=full_name, session_pid=backend.get_leaf_pid(full_name))
     if effective_cwd:
         update_kwargs["cwd"] = effective_cwd
     update_task(db_path, task_id, **update_kwargs)
     return full_name
 
 
-def kill_session(screen_session: str) -> None:
-    get_backend().kill(screen_session)
+def kill_session(screen_session: str, leaf_pid: str | None = None) -> None:
+    get_backend().kill(screen_session, leaf_pid)
 
 
 def send_input(screen_session: str, text: str) -> None:
@@ -486,7 +490,8 @@ def _relink_by_id(db_path: Path, name: str, full_name: str,
         return False
     if task_by_id[task_id].get("source") == "builtin":
         return False
-    update_task(db_path, task_id, screen_session=full_name)
+    update_task(db_path, task_id, screen_session=full_name,
+                session_pid=get_backend().get_leaf_pid(full_name))
     return True
 
 

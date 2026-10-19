@@ -303,7 +303,7 @@ def main(argv: list[str] | None = None) -> int:
             return 1
         if t.get("screen_session"):
             from planner.session_manager import kill_session
-            kill_session(t["screen_session"])
+            kill_session(t["screen_session"], t.get("session_pid"))
         update_task(DB_PATH, task_id, status="done", screen_session=None, claude_session_id=None)
         print(f"Deleted task #{task_id}: {t['title']}")
         return 0

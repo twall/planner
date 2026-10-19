@@ -61,7 +61,27 @@ class ScreenBackend(SessionBackend):
             return False
         return True
 
-    def kill(self, full_name: str) -> None:
+    def get_leaf_pid(self, full_name: str) -> str | None:
+        """Resolve the PID of the command running inside the screen session.
+
+        screen launches `bash -c "...; exec claude ..."` — the `exec` replaces
+        bash's image in place, so the leaf command keeps the *child* PID of
+        the screen daemon (full_name's own PID is the daemon, a separate
+        process). Found via pgrep -P on the daemon's pid.
+        """
+        pid_str = full_name.split(".", 1)[0]
+        if not pid_str.isdigit():
+            return None
+        try:
+            result = subprocess.run(
+                ["pgrep", "-P", pid_str], capture_output=True, timeout=5, text=True,
+            )
+        except (subprocess.TimeoutExpired, OSError):
+            return None
+        pids = result.stdout.split()
+        return pids[0] if pids else None
+
+    def kill(self, full_name: str, leaf_pid: str | None = None) -> None:
         try:
             result = subprocess.run(
                 ["screen", "-S", full_name, "-X", "quit"],
@@ -70,17 +90,22 @@ class ScreenBackend(SessionBackend):
             ok = result.returncode == 0
         except (subprocess.TimeoutExpired, OSError):
             ok = False
-        if ok:
-            return
-        # `-X quit` has been observed to fail against sessions that are
-        # genuinely still alive (not just already-dead stale sockets) —
-        # left unresolved, planner never actually tears those down, so
-        # duplicate sessions accumulate across restarts indefinitely.
-        # Fall back to signaling the daemon's own pid directly.
+        # `-X quit` reports success even when it only tore down a stale
+        # socket entry, or when the leaf command (e.g. claude) ignores the
+        # SIGHUP it gets on pty teardown and survives as an orphan — so its
+        # exit code alone can't be trusted to mean "nothing is running
+        # anymore." Always also signal the daemon pid and the leaf pid
+        # directly; each is a no-op if already dead.
         pid_str = full_name.split(".", 1)[0]
-        if not pid_str.isdigit():
-            return
-        pid = int(pid_str)
+        if pid_str.isdigit():
+            self._terminate_pid(int(pid_str))
+        if leaf_pid and leaf_pid.isdigit():
+            self._terminate_pid(int(leaf_pid))
+        if not ok:
+            _log.warning("kill: screen -X quit failed for %s; used SIGTERM/SIGKILL fallback", full_name)
+
+    @staticmethod
+    def _terminate_pid(pid: int) -> None:
         import os
         import signal
         try:
@@ -88,7 +113,7 @@ class ScreenBackend(SessionBackend):
         except ProcessLookupError:
             return  # already dead; nothing to clean up
         except Exception:
-            _log.warning("kill: SIGTERM fallback failed for %s", full_name)
+            _log.warning("kill: SIGTERM failed for pid %d", pid)
             return
         for _ in range(10):
             time.sleep(0.2)
@@ -100,8 +125,6 @@ class ScreenBackend(SessionBackend):
             os.kill(pid, signal.SIGKILL)
         except ProcessLookupError:
             pass
-        except Exception:
-            _log.warning("kill: SIGKILL fallback failed for %s", full_name)
 
     def send_input(self, full_name: str, text: str) -> None:
         try:

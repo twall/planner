@@ -315,7 +315,7 @@ class TaskPanel(Widget):
     def do_delete(self, task: dict) -> None:
         from planner.session_manager import kill_session
         if task.get("screen_session"):
-            kill_session(task["screen_session"])
+            kill_session(task["screen_session"], task.get("session_pid"))
         update_task(self._db_path, task["id"], status="done", screen_session=None,
                     claude_session_id=None)
         self.refresh_tasks()

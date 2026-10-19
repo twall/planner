@@ -911,7 +911,7 @@ class PlannerApp(App):
         def _do_reconnect() -> None:
             from planner.session_manager import kill_session, resume_session
             if session:
-                kill_session(session)
+                kill_session(session, task.get("session_pid"))
             full_name = resume_session(DB_PATH, task)
             self.call_from_thread(self._monitor.wake, full_name)
             self.call_from_thread(self.query_one(TaskPanel).refresh_tasks)
@@ -1059,7 +1059,7 @@ class PlannerApp(App):
                 # Mark source done regardless
                 if source_session:
                     from planner.session_manager import kill_session
-                    kill_session(source_session)
+                    kill_session(source_session, source.get("session_pid"))
                 update_task(DB_PATH, source["id"],
                             status="done", screen_session=None, claude_session_id=None)
                 self.call_from_thread(self.query_one(TaskPanel).refresh_tasks)

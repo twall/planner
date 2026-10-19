@@ -22,8 +22,15 @@ class SessionBackend(ABC):
         callers must not treat that the same as the session's command exiting."""
 
     @abstractmethod
-    def kill(self, full_name: str) -> None:
-        """Terminate a session."""
+    def kill(self, full_name: str, leaf_pid: str | None = None) -> None:
+        """Terminate a session. If leaf_pid is given, also signal that
+        process directly — the wrapped command (e.g. claude) may survive
+        the multiplexer's own teardown/SIGHUP otherwise."""
+
+    def get_leaf_pid(self, full_name: str) -> str | None:
+        """Return the PID of the command running inside the session, if
+        resolvable. Default: unsupported."""
+        return None
 
     @abstractmethod
     def send_input(self, full_name: str, text: str) -> None:
