@@ -160,6 +160,58 @@ def _install_skills() -> None:
             link.symlink_to(skill_file.resolve())
 
 
+_HOOKS_SRC_DIR = Path(__file__).parent.parent / "hooks"
+_CLAUDE_HOOKS_DIR = Path.home() / ".claude" / "hooks"
+_CLAUDE_SETTINGS_PATH = Path.home() / ".claude" / "settings.json"
+# event -> hook command this installer owns. Appended as its own matcher entry
+# so existing unrelated hooks for the same event are never touched.
+_REQUIRED_HOOKS = {
+    "Notification": "~/.claude/hooks/planner-state-notify.sh",
+    "PreToolUse": "~/.claude/hooks/planner-state-notify.sh",
+    "Stop": "~/.claude/hooks/planner-state-notify.sh",
+    "SessionEnd": "~/.claude/hooks/planner-state-notify.sh",
+}
+
+
+def _install_hooks() -> None:
+    """Install planner's Claude Code state-notify hook and wire it into
+    ~/.claude/settings.json so session tracking works without manual setup.
+
+    Idempotent — safe to run on every startup. Source of truth is
+    planner/../hooks/planner-state-notify.sh; never hand-edit the installed
+    copy under ~/.claude/hooks/.
+    """
+    try:
+        _CLAUDE_HOOKS_DIR.mkdir(parents=True, exist_ok=True)
+        src = (_HOOKS_SRC_DIR / "planner-state-notify.sh").resolve()
+        dest = _CLAUDE_HOOKS_DIR / "planner-state-notify.sh"
+        if not (dest.is_symlink() and dest.resolve() == src):
+            if dest.exists() or dest.is_symlink():
+                dest.unlink()
+            dest.symlink_to(src)
+
+        if not _CLAUDE_SETTINGS_PATH.exists():
+            return  # don't create global settings from scratch
+        settings = json.loads(_CLAUDE_SETTINGS_PATH.read_text())
+        hooks = settings.setdefault("hooks", {})
+        changed = False
+        for event, command in _REQUIRED_HOOKS.items():
+            entries = hooks.setdefault(event, [])
+            already = any(
+                h.get("command") == command
+                for entry in entries
+                for h in entry.get("hooks", [])
+            )
+            if not already:
+                entries.append({"matcher": "", "hooks": [{"type": "command", "command": command}]})
+                changed = True
+        if changed:
+            _CLAUDE_SETTINGS_PATH.write_text(json.dumps(settings, indent=2) + "\n")
+    except Exception:
+        import logging
+        logging.getLogger(__name__).exception("_install_hooks: failed to install state-notify hook")
+
+
 def _ingest_inbox(db_path: Path) -> int:
     """Import queued tasks from ~/.planner/inbox.json. Returns count ingested."""
     if not _INBOX_PATH.exists():
@@ -650,6 +702,8 @@ class PlannerApp(App):
         from planner.session_manager import import_orphan_sessions, resume_sessions
         _install_skills()
         _mark("_install_skills")
+        _install_hooks()
+        _mark("_install_hooks")
         ingested = _ingest_inbox(DB_PATH)
         _mark("_ingest_inbox")
         if ingested:
