@@ -972,12 +972,15 @@ class PlannerApp(App):
         task = self.query_one(TaskPanel)._selected_task()
         if not task or task.get("source") in ("jira", "builtin"):
             return
-        from planner.session_manager import ignore_session
+        from planner.session_manager import ignore_session, kill_session
         name = task.get("screen_session", "")
         short = name.split(".", 1)[1] if "." in name else name
         if short:
             ignore_session(short)
-        update_task(DB_PATH, task["id"], status="done", screen_session=None)
+        if name:
+            kill_session(name, task.get("session_pid"))
+        update_task(DB_PATH, task["id"], status="done", screen_session=None,
+                    claude_session_id=None)
         self.query_one(TaskPanel).refresh_tasks()
         self.notify(f"Ignored '{short}' — won't be imported again.")
 

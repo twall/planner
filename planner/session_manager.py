@@ -307,6 +307,11 @@ def resume_sessions(db_path: Path) -> int:
             continue
         if t.get("source") == "builtin":
             continue
+        if t.get("status") == "done":
+            # A done task's claude_session_id is a leftover pointer, not a
+            # session to revive — resuming it here is what produced duplicate
+            # orphaned screen/claude processes on every planner restart.
+            continue
         name = session_name_for(t["id"])
         id_prefix = f"{SESSION_NAME_PREFIX}-{t['id']}"
         stored = t.get("screen_session") or ""
