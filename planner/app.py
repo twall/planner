@@ -529,6 +529,8 @@ class ConfirmDeleteModal(ModalScreen[bool]):
 
 
 class PlannerApp(App):
+    ENABLE_COMMAND_PALETTE = False
+
     CSS = """
     Input:focus {
         border: tall green;
