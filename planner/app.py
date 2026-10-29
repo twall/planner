@@ -165,11 +165,12 @@ _CLAUDE_HOOKS_DIR = Path.home() / ".claude" / "hooks"
 _CLAUDE_SETTINGS_PATH = Path.home() / ".claude" / "settings.json"
 # event -> hook command this installer owns. Appended as its own matcher entry
 # so existing unrelated hooks for the same event are never touched.
+_HOOK_CMD = str(_CLAUDE_HOOKS_DIR / "planner-state-notify.sh")
 _REQUIRED_HOOKS = {
-    "Notification": "~/.claude/hooks/planner-state-notify.sh",
-    "PreToolUse": "~/.claude/hooks/planner-state-notify.sh",
-    "Stop": "~/.claude/hooks/planner-state-notify.sh",
-    "SessionEnd": "~/.claude/hooks/planner-state-notify.sh",
+    "Notification": _HOOK_CMD,
+    "PreToolUse": _HOOK_CMD,
+    "Stop": _HOOK_CMD,
+    "SessionEnd": _HOOK_CMD,
 }
 
 
@@ -197,6 +198,20 @@ def _install_hooks() -> None:
         changed = False
         for event, command in _REQUIRED_HOOKS.items():
             entries = hooks.setdefault(event, [])
+            # Drop any prior installs of this hook under a different command
+            # string (e.g. the old unexpanded "~/..." form, which Claude
+            # Code's hook runner never resolves — it silently never fires).
+            for entry in entries:
+                before = entry.get("hooks", [])
+                after = [
+                    h for h in before
+                    if not (h.get("command", "").endswith("planner-state-notify.sh")
+                            and h.get("command") != command)
+                ]
+                if after != before:
+                    entry["hooks"] = after
+                    changed = True
+            entries[:] = [e for e in entries if e.get("hooks")]
             already = any(
                 h.get("command") == command
                 for entry in entries

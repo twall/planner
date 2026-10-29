@@ -4,7 +4,7 @@ from textual.app import ComposeResult
 from textual.message import Message
 from textual.widgets import Static
 from textual.widget import Widget
-from planner.db import list_tasks, update_task
+from planner.db import list_tasks, update_task, LOCKED_TITLE_SOURCES
 from planner.config import DB_PATH
 from planner.screen_monitor import SessionState
 
@@ -267,7 +267,7 @@ class TaskPanel(Widget):
         idx = self._cursor_idx()
         return self._tasks[idx] if self._tasks else None
 
-    LOCKED_SOURCES = {"jira", "builtin"}
+    LOCKED_SOURCES = LOCKED_TITLE_SOURCES
 
     def action_move_task_up(self) -> None:
         self._swap_with_neighbour(-1)

@@ -91,11 +91,24 @@ def get_task(db_path: Path, task_id: int) -> dict | None:
     return dict(row) if row else None
 
 
+# Sources whose title is managed externally (or is a fixed builtin identity) —
+# must match planner.widgets.task_panel.TaskPanel.LOCKED_SOURCES. Enforced here
+# too so a CLI call or a task's own session can't rename itself around the
+# UI-only lock (e.g. a recurring "rename titles for clarity" sweep that got
+# resumed into an unrelated conversation and renamed its own task row).
+LOCKED_TITLE_SOURCES = {"jira", "builtin"}
+
+
 def update_task(db_path: Path, task_id: int, **fields) -> None:
     allowed = {"title", "description", "priority", "horizon", "status",
                "screen_session", "claude_session_id", "session_pid", "cwd", "disposable", "is_prompt",
                "rt_frequency", "rt_time", "rt_days", "rt_day", "rt_interval_hours"}
     updates = {k: v for k, v in fields.items() if k in allowed}
+    if "title" in updates:
+        with _conn(db_path) as conn:
+            row = conn.execute("SELECT source FROM tasks WHERE id = ?", (task_id,)).fetchone()
+        if row and row["source"] in LOCKED_TITLE_SOURCES:
+            del updates["title"]
     if not updates:
         return
     set_clause = ", ".join(f"{k} = ?" for k in updates)
