@@ -1374,6 +1374,14 @@ class PlannerApp(App):
         if right._mode == "content":
             task = self.query_one(TaskPanel)._selected_task()
             if task:
+                # Re-read from the DB: the panel's cached row can be stale if a
+                # background worker (resume_sessions, a recurring run) updated
+                # screen_session/claude_session_id since the last refresh —
+                # resuming on the stale id attaches the wrong conversation.
+                from planner.db import get_task
+                fresh = get_task(DB_PATH, task["id"])
+                if fresh:
+                    task = fresh
                 # jira tasks are externally managed — no local session to start
                 launchable = task.get("source") != "jira"
                 if task.get("screen_session"):

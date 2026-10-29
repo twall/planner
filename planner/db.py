@@ -85,6 +85,12 @@ def list_tasks(db_path: Path, horizon: str = None, status: str = None) -> list[d
     return [dict(r) for r in rows]
 
 
+def get_task(db_path: Path, task_id: int) -> dict | None:
+    with _conn(db_path) as conn:
+        row = conn.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
+    return dict(row) if row else None
+
+
 def update_task(db_path: Path, task_id: int, **fields) -> None:
     allowed = {"title", "description", "priority", "horizon", "status",
                "screen_session", "claude_session_id", "session_pid", "cwd", "disposable", "is_prompt",
