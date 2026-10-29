@@ -6,7 +6,14 @@ DB_PATH = PLANNER_ROOT / "data" / "tasks.db"
 TASKS_CONFIG_PATH = PLANNER_ROOT / "sessions.json"
 SETTINGS_PATH = PLANNER_ROOT / "settings.json"
 
-STATE_PATH = Path.home() / ".planner" / "state.json"
+def _tty_slug() -> str:
+    try:
+        return os.ttyname(0).replace("/", "_")
+    except OSError:
+        return "default"
+
+
+STATE_PATH = Path.home() / ".planner" / f"state{_tty_slug()}.json"
 IGNORED_SESSIONS_PATH = Path.home() / ".planner" / "ignored_sessions.json"
 HOOK_STATE_DIR = Path.home() / ".planner" / "hook_states"
 MESSAGE_QUEUE_PATH = Path.home() / ".planner" / "message_queue.json"
