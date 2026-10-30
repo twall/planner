@@ -166,11 +166,14 @@ _CLAUDE_SETTINGS_PATH = Path.home() / ".claude" / "settings.json"
 # event -> hook command this installer owns. Appended as its own matcher entry
 # so existing unrelated hooks for the same event are never touched.
 _HOOK_CMD = str(_CLAUDE_HOOKS_DIR / "planner-state-notify.sh")
+# matcher: "" means "match all" for most events, but SessionEnd matches on
+# the *end reason* (clear/resume/logout/prompt_input_exit/other) — an empty
+# or missing matcher there matches nothing, so the hook silently never fired.
 _REQUIRED_HOOKS = {
-    "Notification": _HOOK_CMD,
-    "PreToolUse": _HOOK_CMD,
-    "Stop": _HOOK_CMD,
-    "SessionEnd": _HOOK_CMD,
+    "Notification": (_HOOK_CMD, ""),
+    "PreToolUse": (_HOOK_CMD, ""),
+    "Stop": (_HOOK_CMD, ""),
+    "SessionEnd": (_HOOK_CMD, "clear|resume|logout|prompt_input_exit|other"),
 }
 
 
@@ -196,17 +199,19 @@ def _install_hooks() -> None:
         settings = json.loads(_CLAUDE_SETTINGS_PATH.read_text())
         hooks = settings.setdefault("hooks", {})
         changed = False
-        for event, command in _REQUIRED_HOOKS.items():
+        for event, (command, matcher) in _REQUIRED_HOOKS.items():
             entries = hooks.setdefault(event, [])
             # Drop any prior installs of this hook under a different command
             # string (e.g. the old unexpanded "~/..." form, which Claude
-            # Code's hook runner never resolves — it silently never fires).
+            # Code's hook runner never resolves — it silently never fires)
+            # or a different matcher (e.g. SessionEnd's old "" matcher, which
+            # matches no end-reason and so also never fires).
             for entry in entries:
                 before = entry.get("hooks", [])
                 after = [
                     h for h in before
                     if not (h.get("command", "").endswith("planner-state-notify.sh")
-                            and h.get("command") != command)
+                            and (h.get("command") != command or entry.get("matcher") != matcher))
                 ]
                 if after != before:
                     entry["hooks"] = after
@@ -216,9 +221,10 @@ def _install_hooks() -> None:
                 h.get("command") == command
                 for entry in entries
                 for h in entry.get("hooks", [])
+                if entry.get("matcher") == matcher
             )
             if not already:
-                entries.append({"matcher": "", "hooks": [{"type": "command", "command": command}]})
+                entries.append({"matcher": matcher, "hooks": [{"type": "command", "command": command}]})
                 changed = True
         if changed:
             _CLAUDE_SETTINGS_PATH.write_text(json.dumps(settings, indent=2) + "\n")
