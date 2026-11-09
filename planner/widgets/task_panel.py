@@ -223,7 +223,7 @@ class TaskPanel(Widget):
         from planner.widgets.session_panel import STATE_COLORS
         tag = SOURCE_TAG.get(t["source"], t["source"].upper())
         cursor = "▶ " if is_cursor else "  "
-        jira = f"[{t['jira_key']}] " if t.get("jira_key") else f"[{tag}] "
+        jira = f"\\[{t['jira_key']}] " if t.get("jira_key") else f"\\[{tag}] "
         sess = self._session_states.get(t.get("screen_session") or "")
         idle_suffix = ""
         if sess:
