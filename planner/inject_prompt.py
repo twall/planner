@@ -18,6 +18,9 @@ from planner.backends import get_backend
 from planner.session_manager import _send_commands
 
 
+MAX_ATTEMPTS = 3
+
+
 def main() -> None:
     full_name, prompt = sys.argv[1], sys.argv[2]
     LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -27,10 +30,17 @@ def main() -> None:
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
     backend = get_backend()
-    if not _send_commands(backend, full_name, prompt, auto_submit=False):
-        logging.getLogger(__name__).error(
-            "inject_prompt: session %s never became ready; prompt not sent", full_name
+    for attempt in range(1, MAX_ATTEMPTS + 1):
+        if _send_commands(backend, full_name, prompt, auto_submit=False):
+            return
+        logging.getLogger(__name__).warning(
+            "inject_prompt: session %s not ready on attempt %d/%d",
+            full_name, attempt, MAX_ATTEMPTS
         )
+    logging.getLogger(__name__).error(
+        "inject_prompt: session %s never became ready after %d attempts; prompt not sent",
+        full_name, MAX_ATTEMPTS
+    )
 
 
 if __name__ == "__main__":
