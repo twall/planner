@@ -244,7 +244,7 @@ class TaskPanel(Widget):
             badge = "  "
         title = t["title"]
         if t.get("status") == "done":
-            title = f"[dim strike]{title}[/strike][/dim]"
+            title = f"[dim strike]{title}[/dim strike]"
         return f"{cursor}{badge}{jira}{title}{idle_suffix}"
 
     def action_move_cursor_down(self) -> None:
