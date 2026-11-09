@@ -139,12 +139,19 @@ def upsert_jira_task(db_path: Path, jira_key: str, title: str, description: str,
             )
 
 
+# Keep in sync with scheduler.RECURRING_SOURCES — these rows are reused daily
+# by the scheduler, not one-off tasks, so they must never age out of existence.
+RECURRING_SOURCES = {"slack", "git", "sentry"}
+
+
 def delete_old_done_tasks(db_path: Path, days: int = 30, dry_run: bool = False) -> list[dict]:
     """Hard-delete done tasks whose updated_at is older than `days` days. Returns deleted rows."""
+    placeholders = ",".join("?" * len(RECURRING_SOURCES))
     with _conn(db_path) as conn:
         rows = conn.execute(
-            "SELECT * FROM tasks WHERE status = 'done' AND updated_at < datetime('now', ?)",
-            (f"-{days} days",)
+            f"SELECT * FROM tasks WHERE status = 'done' AND updated_at < datetime('now', ?) "
+            f"AND source NOT IN ({placeholders})",
+            (f"-{days} days", *RECURRING_SOURCES)
         ).fetchall()
         deleted = [dict(r) for r in rows]
         if not dry_run and deleted:
