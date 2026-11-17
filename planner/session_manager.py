@@ -185,6 +185,7 @@ def launch_session(db_path: Path, task: dict, cwd: str | None = None,
     if label:
         shell_cmd += f" --name {shlex.quote(label)}"
     effective_launch_cwd = _resolve_cwd(cwd)
+    _kill_stale_by_name(backend, name)
     backend.launch(name, shell_cmd, cwd=effective_launch_cwd, cols=cols, rows=rows)
     # full_name differs by backend: screen uses PID.name, tmux uses name
     # Resolve by looking up the just-created session
@@ -223,15 +224,45 @@ def launch_session(db_path: Path, task: dict, cwd: str | None = None,
     return full_name, prompt_sent
 
 
-def _resolve_full_name(backend, name: str) -> str | None:
-    """Find the full_name for a session by its short name (needed for screen's PID.name format)."""
+def _kill_stale_by_name(backend, name: str) -> None:
+    """Kill any existing session(s) already registered under `name`.
+
+    Screen allows multiple sessions to share one name, distinguished only by
+    PID prefix — launching a new one does not replace or reap an old
+    detached-but-alive session with the same name. Without this, a leftover
+    zombie can outlive the new launch and later win _resolve_full_name's
+    first-match lookup, so callers attach to the wrong (stale) conversation.
+    """
     try:
-        for s in backend.list_sessions():
-            if s.name == name:
-                return s.full_name
+        stale = [s for s in backend.list_sessions() if s.name == name]
     except Exception:
-        pass
-    return None
+        return
+    for s in stale:
+        try:
+            backend.kill(s.full_name)
+        except Exception:
+            pass
+
+
+def _resolve_full_name(backend, name: str) -> str | None:
+    """Find the full_name for a session by its short name (needed for screen's PID.name format).
+
+    Picks the highest-PID (most recently created) match in case more than
+    one session with this name is briefly live (e.g. a stale one not yet
+    fully reaped) — a stable tiebreak against latching onto an old session.
+    """
+    try:
+        matches = [s for s in backend.list_sessions() if s.name == name]
+    except Exception:
+        return None
+    if not matches:
+        return None
+
+    def _pid(full_name: str) -> int:
+        prefix = full_name.split(".", 1)[0]
+        return int(prefix) if prefix.isdigit() else -1
+
+    return max(matches, key=lambda s: _pid(s.full_name)).full_name
 
 
 def _bare_name(screen_session: str) -> str:
@@ -246,6 +277,7 @@ def _resume_one(db_path: Path, backend, t: dict) -> bool:
     name = session_name_for(t["id"])
     shell_cmd = f"exec claude --resume {t['claude_session_id']}"
     launch_cwd = _resolve_cwd(t.get("cwd"))
+    _kill_stale_by_name(backend, name)
     if not backend.launch(name, shell_cmd, cwd=launch_cwd):
         # The multiplexer itself failed to start (e.g. transient fork/pty
         # exhaustion) — the session id is not known to be bad, so leave the
@@ -377,6 +409,7 @@ def resume_session(db_path: Path, task: dict, cwd: str | None = None,
     effective_cwd = _resolve_cwd(cwd or task.get("cwd"))
     name = session_name_for(task_id, task.get("title"))
     shell_cmd = f"exec claude --resume {session_id}"
+    _kill_stale_by_name(backend, name)
     backend.launch(name, shell_cmd, cwd=effective_cwd, cols=cols, rows=rows)
     time.sleep(2)  # wait for claude --resume to initialize before attach
     full_name = _resolve_full_name(backend, name) or name
